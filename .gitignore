@@ -1,0 +1,17 @@
+# Segredos
+.env
+
+# Banco e uploads (dados pessoais — nunca versionar)
+data/financas.db
+data/uploads/
+data/backups/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.streamlit/secrets.toml
+
+# macOS
+.DS_Store
