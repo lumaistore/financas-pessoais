@@ -32,6 +32,26 @@ st.markdown(
 )
 
 st.info(
-    "Privacidade: o banco fica em `data/financas.db` na sua máquina. "
-    "O sistema nunca pede nem armazena senhas de bancos ou corretoras."
+    "Privacidade: seus dados ficam só no seu banco (local ou na sua nuvem "
+    "privada). O sistema nunca pede nem armazena senhas de bancos ou corretoras."
 )
+
+# Diagnóstico de conexão (temporário) — confirma a qual banco o app conectou.
+with st.expander("🔧 Diagnóstico de conexão"):
+    try:
+        from core.db import info_banco, get_session
+        from core.models import InvestimentoSnapshot
+        from sqlalchemy import func, select
+
+        info = info_banco()
+        with get_session() as s:
+            n_inv = s.scalar(select(func.count()).select_from(InvestimentoSnapshot)) or 0
+        if info["dialeto"].startswith("postgres"):
+            st.success(f"Conectado ao Postgres na nuvem ({info['host']}). Posições de investimento: {n_inv}.")
+        else:
+            st.warning(
+                f"Usando banco local ({info['dialeto']}) — DATABASE_URL não foi lida. "
+                "Confira o secret DATABASE_URL no Streamlit (Manage app → Settings → Secrets)."
+            )
+    except Exception as exc:
+        st.error(f"Falha ao conectar no banco: {exc}")

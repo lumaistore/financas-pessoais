@@ -53,8 +53,10 @@ class IAIndisponivelError(Exception):
 
 
 def chave_configurada() -> bool:
-    """True se a variável de ambiente da chave estiver preenchida."""
-    return bool((os.environ.get(NOME_VARIAVEL) or "").strip())
+    """True se a chave estiver disponível (env local ou st.secrets na nuvem)."""
+    from core.config import get_anthropic_key
+
+    return bool((get_anthropic_key() or "").strip())
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +217,9 @@ def analisar_carteira(mes_ref: Optional[str] = None, pergunta_extra: str = "") -
         )
 
     try:
-        client = Anthropic()  # lê ANTHROPIC_API_KEY do ambiente
+        from core.config import get_anthropic_key
+
+        client = Anthropic(api_key=get_anthropic_key())
         resposta = client.messages.create(
             model=MODELO,
             max_tokens=1500,

@@ -10,11 +10,30 @@ from sqlalchemy.orm import Session, sessionmaker
 from core.config import get_db_url
 from core.models import Base
 
-_db_url = get_db_url()
-# SQLite precisa liberar acesso entre threads do Streamlit; Postgres não.
-_connect_args = {"check_same_thread": False} if _db_url.startswith("sqlite") else {}
-engine = create_engine(_db_url, future=True, connect_args=_connect_args)
-SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
+# Engine criado de forma PREGUIÇOSA (na primeira utilização), não no import.
+# Assim, na nuvem, ele só é montado quando o Streamlit já disponibilizou os
+# segredos (DATABASE_URL) — evitando cair no SQLite vazio por engano.
+_engine = None
+_SessionLocal = None
+
+
+def get_engine():
+    global _engine, _SessionLocal
+    if _engine is None:
+        url = get_db_url()
+        # SQLite precisa liberar acesso entre threads; Postgres não.
+        connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+        _engine = create_engine(
+            url, future=True, connect_args=connect_args, pool_pre_ping=True
+        )
+        _SessionLocal = sessionmaker(bind=_engine, class_=Session, expire_on_commit=False)
+    return _engine
+
+
+def info_banco() -> dict:
+    """Diagnóstico: tipo de banco e se está conectando (sem expor segredos)."""
+    eng = get_engine()
+    return {"dialeto": eng.dialect.name, "host": (eng.url.host or "local")}
 
 
 # Colunas adicionadas depois que o banco já existia. SQLite só cria tabelas
@@ -32,11 +51,12 @@ _MIGRACOES_COLUNAS = [
 def _migrar_colunas() -> None:
     # Só faz sentido no SQLite local (banco antigo a evoluir). No Postgres o
     # create_all já cria todas as colunas, então não há o que migrar.
-    if engine.dialect.name != "sqlite":
+    eng = get_engine()
+    if eng.dialect.name != "sqlite":
         return
-    insp = inspect(engine)
+    insp = inspect(eng)
     tabelas = set(insp.get_table_names())
-    with engine.begin() as conn:
+    with eng.begin() as conn:
         for tabela, coluna, definicao in _MIGRACOES_COLUNAS:
             if tabela not in tabelas:
                 continue
@@ -47,14 +67,15 @@ def _migrar_colunas() -> None:
 
 def init_db() -> None:
     """Cria as tabelas que ainda não existirem e aplica migrações leves."""
-    Base.metadata.create_all(engine)
+    Base.metadata.create_all(get_engine())
     _migrar_colunas()
 
 
 @contextmanager
 def get_session():
     """Sessão transacional: commit no sucesso, rollback no erro."""
-    session = SessionLocal()
+    get_engine()  # garante engine + sessionmaker criados
+    session = _SessionLocal()
     try:
         yield session
         session.commit()
