@@ -65,10 +65,34 @@ def _migrar_colunas() -> None:
                 conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {definicao}"))
 
 
+def _sincronizar_sequencias_postgres() -> None:
+    """Após migrar dados (com IDs explícitos) para o Postgres, os contadores de
+    ID (sequences) ficam atrasados, causando IntegrityError em novos inserts.
+    Aqui realinhamos cada sequence para MAX(id)+1. Idempotente e barato."""
+    eng = get_engine()
+    if eng.dialect.name != "postgresql":
+        return
+    with eng.begin() as conn:
+        for tabela in Base.metadata.sorted_tables:
+            if "id" not in tabela.columns:
+                continue
+            nome = tabela.name
+            try:
+                conn.execute(
+                    text(
+                        f"SELECT setval(pg_get_serial_sequence('{nome}', 'id'), "
+                        f"COALESCE((SELECT MAX(id) FROM {nome}), 0) + 1, false)"
+                    )
+                )
+            except Exception:
+                pass  # tabela sem sequence/serial — ignora
+
+
 def init_db() -> None:
     """Cria as tabelas que ainda não existirem e aplica migrações leves."""
     Base.metadata.create_all(get_engine())
     _migrar_colunas()
+    _sincronizar_sequencias_postgres()
 
 
 @contextmanager
