@@ -37,7 +37,22 @@ st.info(
 )
 
 # Diagnóstico de conexão (temporário) — confirma a qual banco o app conectou.
-with st.expander("🔧 Diagnóstico de conexão"):
+with st.expander("🔧 Diagnóstico de conexão", expanded=True):
+    import os
+
+    # 1) Quais segredos o Streamlit enxerga (só os NOMES, nunca os valores).
+    try:
+        nomes_secrets = list(st.secrets.keys())
+    except Exception as exc:
+        nomes_secrets = []
+        st.write(f"st.secrets indisponível: {exc}")
+    st.write(f"**Segredos visíveis (nomes):** {nomes_secrets or 'NENHUM'}")
+    st.write(
+        f"**DATABASE_URL** — em st.secrets: `{'DATABASE_URL' in nomes_secrets}` · "
+        f"em variável de ambiente: `{bool(os.environ.get('DATABASE_URL'))}`"
+    )
+
+    # 2) A qual banco o app de fato conectou.
     try:
         from core.db import info_banco, get_session
         from core.models import InvestimentoSnapshot
@@ -47,11 +62,12 @@ with st.expander("🔧 Diagnóstico de conexão"):
         with get_session() as s:
             n_inv = s.scalar(select(func.count()).select_from(InvestimentoSnapshot)) or 0
         if info["dialeto"].startswith("postgres"):
-            st.success(f"Conectado ao Postgres na nuvem ({info['host']}). Posições de investimento: {n_inv}.")
+            st.success(f"✅ Conectado ao Postgres ({info['host']}). Posições de investimento: {n_inv}.")
         else:
             st.warning(
-                f"Usando banco local ({info['dialeto']}) — DATABASE_URL não foi lida. "
-                "Confira o secret DATABASE_URL no Streamlit (Manage app → Settings → Secrets)."
+                f"⚠️ Usando banco local ({info['dialeto']}). Se 'DATABASE_URL em st.secrets' "
+                "acima estiver `True`, basta **Reboot app**. Se estiver `False`, o segredo "
+                "não foi salvo nas configurações DESTE app (Manage app → Settings → Secrets)."
             )
     except Exception as exc:
         st.error(f"Falha ao conectar no banco: {exc}")
