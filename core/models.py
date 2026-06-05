@@ -219,6 +219,33 @@ class CarteiraHistorico(Base):
     total_brl: Mapped[float] = mapped_column(Float, nullable=False)
 
 
+class RetiradaLucroConfig(Base):
+    """Dados fixos do recibo de distribuição de lucros (singleton)."""
+
+    __tablename__ = "retirada_lucro_config"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa: Mapped[Optional[str]] = mapped_column(String)
+    cnpj: Mapped[Optional[str]] = mapped_column(String)
+    beneficiario: Mapped[Optional[str]] = mapped_column(String)
+    cpf: Mapped[Optional[str]] = mapped_column(String)
+    cidade: Mapped[Optional[str]] = mapped_column(String)
+
+
+class RetiradaLucro(Base):
+    """Uma retirada/distribuição de lucros, com o recibo (gerado ou anexado)."""
+
+    __tablename__ = "retirada_lucros"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[date] = mapped_column(Date, nullable=False)
+    valor: Mapped[float] = mapped_column(Float, nullable=False)
+    observacao: Mapped[Optional[str]] = mapped_column(String)
+    arquivo_nome: Mapped[Optional[str]] = mapped_column(String)
+    arquivo_dados: Mapped[Optional[bytes]] = mapped_column(LargeBinary, deferred=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
 class InvestimentoMovimento(Base):
     __tablename__ = "investimento_movimentos"
 
