@@ -241,8 +241,13 @@ class RetiradaLucro(Base):
     data: Mapped[date] = mapped_column(Date, nullable=False)
     valor: Mapped[float] = mapped_column(Float, nullable=False)
     observacao: Mapped[Optional[str]] = mapped_column(String)
+    # Recibo gerado pelo app (não assinado).
     arquivo_nome: Mapped[Optional[str]] = mapped_column(String)
     arquivo_dados: Mapped[Optional[bytes]] = mapped_column(LargeBinary, deferred=True)
+    # Versão assinada (devolvida pelo usuário) ou recibo antigo importado.
+    assinado: Mapped[bool] = mapped_column(Boolean, default=False)
+    assinado_nome: Mapped[Optional[str]] = mapped_column(String)
+    assinado_dados: Mapped[Optional[bytes]] = mapped_column(LargeBinary, deferred=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 

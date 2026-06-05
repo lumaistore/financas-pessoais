@@ -77,6 +77,59 @@ def _brl(v: float) -> str:
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _parse_valor(s: str) -> Optional[float]:
+    """Converte texto de valor (BR '12.500,50' ou US '12,500.50') em float."""
+    s = (s or "").strip().strip(".,")
+    if not s:
+        return None
+    if "." in s and "," in s:
+        if s.rfind(",") > s.rfind("."):  # vírgula é o decimal (BR)
+            s = s.replace(".", "").replace(",", ".")
+        else:  # ponto é o decimal (US)
+            s = s.replace(",", "")
+    elif "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def ler_recibo_pdf(dados: bytes) -> dict:
+    """Lê um PDF de recibo e tenta extrair {valor, data}. Vazio se não achar
+    (ex.: PDF escaneado/imagem) — aí o usuário preenche à mão."""
+    import re
+
+    import pdfplumber
+
+    texto = ""
+    try:
+        with pdfplumber.open(io.BytesIO(dados)) as pdf:
+            for pg in pdf.pages:
+                texto += (pg.extract_text() or "") + "\n"
+    except Exception:
+        return {"valor": None, "data": None}
+
+    data_val = None
+    m = re.search(r"distribui[çc][ãa]o[:\s]*?(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{2,4})", texto, re.I)
+    if not m:
+        m = re.search(r"(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})", texto)
+    if m:
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if y < 100:
+            y += 2000
+        try:
+            data_val = date(y, mo, d)
+        except ValueError:
+            data_val = None
+
+    valor_val = None
+    mv = re.search(r"R\$\s*([\d\.,]+)", texto)
+    if mv:
+        valor_val = _parse_valor(mv.group(1))
+    return {"valor": valor_val, "data": data_val}
+
+
 # ---------------------------------------------------------------------------
 # Geração do recibo em PDF
 # ---------------------------------------------------------------------------
@@ -159,21 +212,88 @@ def adicionar_retirada(
         return r.id
 
 
-def listar_retiradas() -> List[dict]:
+def registrar_assinado(retirada_id: int, nome: str, dados: bytes) -> None:
+    """Anexa a versão assinada do recibo ao registro."""
+    with get_session() as s:
+        r = s.get(RetiradaLucro, retirada_id)
+        if r:
+            r.assinado = True
+            r.assinado_nome = nome
+            r.assinado_dados = dados
+
+
+def remover_assinado(retirada_id: int) -> None:
+    with get_session() as s:
+        r = s.get(RetiradaLucro, retirada_id)
+        if r:
+            r.assinado = False
+            r.assinado_nome = None
+            r.assinado_dados = None
+
+
+def atualizar_retirada(retirada_id: int, data_dist: date, valor: float, observacao: Optional[str]) -> None:
+    with get_session() as s:
+        r = s.get(RetiradaLucro, retirada_id)
+        if r:
+            r.data = data_dist
+            r.valor = float(valor)
+            r.observacao = observacao
+
+
+def arquivo_assinado(retirada_id: int):
+    with get_session() as s:
+        r = s.get(RetiradaLucro, retirada_id)
+        if not r or r.assinado_dados is None:
+            return None, None
+        return r.assinado_nome, r.assinado_dados
+
+
+def listar_retiradas(ano: Optional[int] = None, mes: Optional[int] = None) -> List[dict]:
     with get_session() as s:
         rs = s.scalars(select(RetiradaLucro).order_by(RetiradaLucro.data.desc())).all()
-        return [
+        out = []
+        for r in rs:
+            if ano is not None and r.data.year != ano:
+                continue
+            if mes is not None and r.data.month != mes:
+                continue
+            out.append(
+                {
+                    "id": r.id,
+                    "data": r.data,
+                    "valor": r.valor,
+                    "observacao": r.observacao,
+                    "tem_arquivo": r.arquivo_nome is not None,
+                    "arquivo_nome": r.arquivo_nome,
+                    "assinado": bool(r.assinado),
+                    "tem_assinado": r.assinado_nome is not None,
+                    "assinado_nome": r.assinado_nome,
+                    "ano": r.data.year,
+                    "mes": r.data.month,
+                }
+            )
+        return out
+
+
+def retiradas_por_mes(ano: int) -> List[dict]:
+    """Para os 12 meses do ano: total, quantidade e se já foi feito."""
+    todas = listar_retiradas(ano=ano)
+    resultado = []
+    for m in range(1, 13):
+        do_mes = [r for r in todas if r["mes"] == m]
+        total = sum(r["valor"] for r in do_mes)
+        assinados = sum(1 for r in do_mes if r["assinado"])
+        resultado.append(
             {
-                "id": r.id,
-                "data": r.data,
-                "valor": r.valor,
-                "observacao": r.observacao,
-                "tem_arquivo": r.arquivo_nome is not None,
-                "arquivo_nome": r.arquivo_nome,
-                "ano": r.data.year,
+                "mes": m,
+                "nome_mes": MESES[m - 1].capitalize(),
+                "qtd": len(do_mes),
+                "total": total,
+                "feito": len(do_mes) > 0,
+                "assinados": assinados,
             }
-            for r in rs
-        ]
+        )
+    return resultado
 
 
 def excluir_retirada(retirada_id: int) -> None:
