@@ -1,4 +1,6 @@
 """Tela de Faturas de Cartão (Fase 3): upload, importação e revisão manual."""
+from datetime import date
+
 import pandas as pd
 import streamlit as st
 
@@ -221,5 +223,33 @@ if reembolsos:
     df_show.columns = ["Banco", "Mês ref.", "Itens", "Total a reembolsar"]
     st.dataframe(df_show, use_container_width=True, hide_index=True)
     st.metric("Total LUMAI em todas as faturas", f"R$ {total_geral:,.2f}")
+
+    # --- Exportar relatório de reembolso (Excel / PDF) --------------------
+    st.markdown("**Baixar relatório para reembolso:**")
+    if st.button("Gerar relatório de reembolso"):
+        from services.relatorios import gerar_excel_lumai, gerar_pdf_lumai
+
+        with st.spinner("Gerando arquivos..."):
+            st.session_state["lumai_xlsx"] = gerar_excel_lumai()
+            st.session_state["lumai_pdf"] = gerar_pdf_lumai()
+
+    if st.session_state.get("lumai_xlsx") and st.session_state.get("lumai_pdf"):
+        carimbo = date.today().strftime("%Y-%m-%d")
+        bx, bp = st.columns(2)
+        with bx:
+            st.download_button(
+                "📥 Baixar Excel (.xlsx)",
+                data=st.session_state["lumai_xlsx"],
+                file_name=f"reembolso_lumai_{carimbo}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        with bp:
+            st.download_button(
+                "📄 Baixar PDF",
+                data=st.session_state["lumai_pdf"],
+                file_name=f"reembolso_lumai_{carimbo}.pdf",
+                mime="application/pdf",
+            )
+        st.caption("O Excel abre com as colunas separadas; o PDF vem detalhado e organizado por origem.")
 else:
     st.caption("Nenhuma transação marcada como LUMAI ainda. Marque na revisão acima e salve.")
