@@ -88,11 +88,22 @@ def _sincronizar_sequencias_postgres() -> None:
                 pass  # tabela sem sequence/serial — ignora
 
 
+_inicializado = False
+
+
 def init_db() -> None:
-    """Cria as tabelas que ainda não existirem e aplica migrações leves."""
+    """Cria tabelas e aplica migrações — uma única vez por processo.
+
+    Como cada página chama init_db(), o controle `_inicializado` evita refazer
+    introspecção + sync de sequences a cada navegação (custoso com banco na
+    nuvem). Roda só na primeira vez; depois é praticamente instantâneo."""
+    global _inicializado
+    if _inicializado:
+        return
     Base.metadata.create_all(get_engine())
     _migrar_colunas()
     _sincronizar_sequencias_postgres()
+    _inicializado = True
 
 
 @contextmanager
