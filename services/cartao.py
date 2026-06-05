@@ -123,6 +123,11 @@ def listar_faturas() -> List[dict]:
             n = len(f.transacoes)
             total = sum(t.valor for t in f.transacoes)
             pendentes = sum(1 for t in f.transacoes if not t.revisado)
+            tem_comprovante = f.comprovante_nome is not None
+            # "Validada/fechada" = paga + comprovante anexado.
+            fechada = bool(f.paga) and tem_comprovante
+            diferenca = (float(f.valor_pago) - total) if f.valor_pago is not None else None
+            confere = diferenca is not None and abs(diferenca) < 0.01
             resultado.append(
                 {
                     "id": f.id,
@@ -132,6 +137,14 @@ def listar_faturas() -> List[dict]:
                     "transacoes": n,
                     "total": total,
                     "pendentes_revisao": pendentes,
+                    "paga": bool(f.paga),
+                    "data_pagamento": f.data_pagamento,
+                    "valor_pago": f.valor_pago,
+                    "tem_comprovante": tem_comprovante,
+                    "comprovante_nome": f.comprovante_nome,
+                    "fechada": fechada,
+                    "diferenca": diferenca,
+                    "confere": confere,
                 }
             )
         return resultado
@@ -262,6 +275,48 @@ def excluir_fatura(fatura_id: int) -> None:
         f = s.get(Fatura, fatura_id)
         if f:
             s.delete(f)
+
+
+def registrar_pagamento_fatura(
+    fatura_id: int,
+    data_pagamento,
+    valor_pago: float,
+    comprovante_nome: Optional[str] = None,
+    comprovante_dados: Optional[bytes] = None,
+) -> None:
+    """Marca a fatura como paga e anexa o comprovante (guardado no banco)."""
+    with get_session() as s:
+        f = s.get(Fatura, fatura_id)
+        if not f:
+            return
+        f.paga = True
+        f.data_pagamento = data_pagamento
+        f.valor_pago = float(valor_pago) if valor_pago is not None else None
+        if comprovante_dados is not None:
+            f.comprovante_nome = comprovante_nome
+            f.comprovante_dados = comprovante_dados
+
+
+def remover_pagamento_fatura(fatura_id: int) -> None:
+    """Desfaz o pagamento/validação (reabre a fatura e remove o comprovante)."""
+    with get_session() as s:
+        f = s.get(Fatura, fatura_id)
+        if not f:
+            return
+        f.paga = False
+        f.data_pagamento = None
+        f.valor_pago = None
+        f.comprovante_nome = None
+        f.comprovante_dados = None
+
+
+def comprovante_fatura(fatura_id: int):
+    """Retorna (nome, dados) do comprovante, ou (None, None) se não houver."""
+    with get_session() as s:
+        f = s.get(Fatura, fatura_id)
+        if not f or f.comprovante_dados is None:
+            return None, None
+        return f.comprovante_nome, f.comprovante_dados
 
 
 def atualizar_mes_referencia(fatura_id: int, mes_referencia: str) -> None:

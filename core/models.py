@@ -15,6 +15,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -78,6 +79,16 @@ class Fatura(Base):
     mes_referencia: Mapped[Optional[str]] = mapped_column(String)  # AAAA-MM
     data_importacao: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     arquivo: Mapped[Optional[str]] = mapped_column(String)
+
+    # Fechamento/pagamento da fatura (validador). Anexa-se o comprovante e a
+    # fatura é confirmada como "fechada" — o sistema checa se o valor pago bate
+    # com o total da fatura.
+    paga: Mapped[bool] = mapped_column(Boolean, default=False)
+    data_pagamento: Mapped[Optional[date]] = mapped_column(Date)
+    valor_pago: Mapped[Optional[float]] = mapped_column(Float)
+    comprovante_nome: Mapped[Optional[str]] = mapped_column(String)
+    # deferred: só carrega o arquivo quando explicitamente acessado (download).
+    comprovante_dados: Mapped[Optional[bytes]] = mapped_column(LargeBinary, deferred=True)
 
     transacoes: Mapped[List["TransacaoCartao"]] = relationship(
         back_populates="fatura", cascade="all, delete-orphan"

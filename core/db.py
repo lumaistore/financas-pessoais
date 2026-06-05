@@ -36,33 +36,30 @@ def info_banco() -> dict:
     return {"dialeto": eng.dialect.name, "host": (eng.url.host or "local")}
 
 
-# Colunas adicionadas depois que o banco já existia. SQLite só cria tabelas
-# novas em create_all — colunas novas em tabelas existentes precisam de ALTER.
-# Formato: (tabela, coluna, definição SQL).
-_MIGRACOES_COLUNAS = [
-    ("transacoes_cartao", "lumai", "BOOLEAN DEFAULT 0"),
-    ("investimento_snapshots", "ticker", "VARCHAR"),
-    ("investimento_snapshots", "indexador", "VARCHAR"),
-    ("investimento_snapshots", "taxa_indice", "FLOAT"),
-    ("investimento_snapshots", "data_aplicacao", "DATE"),
-]
-
-
 def _migrar_colunas() -> None:
-    # Só faz sentido no SQLite local (banco antigo a evoluir). No Postgres o
-    # create_all já cria todas as colunas, então não há o que migrar.
+    """Auto-migração: para cada tabela já existente, adiciona as colunas do
+    modelo que ainda não existem no banco, com o tipo certo para o dialeto
+    (SQLite ou Postgres). Cobre tanto o banco local antigo quanto o Postgres
+    da nuvem (que tem a tabela antiga). Colunas novas devem ser anuláveis."""
     eng = get_engine()
-    if eng.dialect.name != "sqlite":
-        return
     insp = inspect(eng)
-    tabelas = set(insp.get_table_names())
+    existentes_tabelas = set(insp.get_table_names())
+    prep = eng.dialect.identifier_preparer
     with eng.begin() as conn:
-        for tabela, coluna, definicao in _MIGRACOES_COLUNAS:
-            if tabela not in tabelas:
-                continue
-            existentes = {c["name"] for c in insp.get_columns(tabela)}
-            if coluna not in existentes:
-                conn.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {definicao}"))
+        for tabela in Base.metadata.sorted_tables:
+            if tabela.name not in existentes_tabelas:
+                continue  # tabela nova já criada inteira por create_all
+            cols_db = {c["name"] for c in insp.get_columns(tabela.name)}
+            for coluna in tabela.columns:
+                if coluna.name in cols_db:
+                    continue
+                tipo = coluna.type.compile(dialect=eng.dialect)
+                conn.execute(
+                    text(
+                        f"ALTER TABLE {prep.format_table(tabela)} "
+                        f"ADD COLUMN {prep.format_column(coluna)} {tipo}"
+                    )
+                )
 
 
 def _sincronizar_sequencias_postgres() -> None:

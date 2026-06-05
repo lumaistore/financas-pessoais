@@ -8,6 +8,7 @@ from core.db import init_db
 from services.cartao import (
     adicionar_categoria,
     atualizar_mes_referencia,
+    comprovante_fatura,
     detectar_banco,
     excluir_categoria,
     excluir_fatura,
@@ -17,6 +18,8 @@ from services.cartao import (
     listar_faturas,
     listar_transacoes,
     previsualizar,
+    registrar_pagamento_fatura,
+    remover_pagamento_fatura,
     renomear_categoria,
     reembolso_lumai_por_fatura,
     salvar_revisao,
@@ -97,7 +100,8 @@ if not faturas:
 
 df_fat = pd.DataFrame(faturas)
 df_fat_view = df_fat[["id", "banco", "mes_referencia", "transacoes", "total", "pendentes_revisao"]].copy()
-df_fat_view.columns = ["#", "Banco", "Mês ref.", "Transações", "Total (R$)", "Pendentes"]
+df_fat_view["status"] = df_fat["fechada"].map(lambda x: "✅ Fechada" if x else "🟡 Em aberto")
+df_fat_view.columns = ["#", "Banco", "Mês ref.", "Transações", "Total (R$)", "Pendentes", "Status"]
 st.dataframe(df_fat_view, use_container_width=True, hide_index=True)
 
 opcoes = {f"#{f['id']} — {f['banco']} · {f['mes_referencia']} · R$ {f['total']:,.2f}": f["id"] for f in faturas}
@@ -125,6 +129,73 @@ with col_c:
     if st.button("Excluir fatura", type="secondary"):
         excluir_fatura(fatura_id)
         st.rerun()
+
+# --- Validação / fechamento da fatura -------------------------------------
+fat_sel = next((f for f in faturas if f["id"] == fatura_id), None)
+if fat_sel:
+    with st.container(border=True):
+        st.markdown("### 🧾 Fechamento da fatura")
+        if fat_sel["fechada"]:
+            st.success(
+                f"✅ **Fatura fechada** — paga em "
+                f"{fat_sel['data_pagamento'].strftime('%d/%m/%Y') if fat_sel['data_pagamento'] else '—'} · "
+                f"valor pago R$ {(fat_sel['valor_pago'] or 0):,.2f}"
+            )
+            # Validação do valor pago vs total da fatura.
+            if fat_sel["confere"]:
+                st.caption(f"💯 O valor pago confere com o total da fatura (R$ {fat_sel['total']:,.2f}).")
+            elif fat_sel["diferenca"] is not None:
+                d = fat_sel["diferenca"]
+                sinal = "a mais" if d > 0 else "a menos"
+                st.warning(
+                    f"⚠️ O valor pago difere do total da fatura em **R$ {abs(d):,.2f}** ({sinal}). "
+                    f"Total da fatura: R$ {fat_sel['total']:,.2f}."
+                )
+            v1, v2 = st.columns(2)
+            with v1:
+                if fat_sel["tem_comprovante"]:
+                    nome, dados = comprovante_fatura(fatura_id)
+                    st.download_button(
+                        "📎 Baixar comprovante",
+                        data=dados,
+                        file_name=nome or f"comprovante_fatura_{fatura_id}",
+                    )
+            with v2:
+                if st.button("Reabrir fatura (desfazer)", type="secondary"):
+                    remover_pagamento_fatura(fatura_id)
+                    st.rerun()
+        else:
+            st.caption("Anexe o comprovante de pagamento para confirmar que a fatura fechou.")
+            with st.form(f"pagar_fatura_{fatura_id}"):
+                pf1, pf2 = st.columns(2)
+                with pf1:
+                    data_pag = st.date_input("Data do pagamento", value=date.today(), format="DD/MM/YYYY")
+                with pf2:
+                    valor_pago = st.number_input(
+                        "Valor pago (R$)",
+                        min_value=0.0,
+                        value=float(fat_sel["total"]),
+                        step=10.0,
+                        format="%.2f",
+                        help=f"Total da fatura: R$ {fat_sel['total']:,.2f}. O sistema confere se bate.",
+                    )
+                comprovante = st.file_uploader(
+                    "Comprovante de pagamento (PDF ou imagem)", type=["pdf", "png", "jpg", "jpeg"]
+                )
+                confirmar = st.form_submit_button("Confirmar pagamento e fechar fatura", type="primary")
+                if confirmar:
+                    if comprovante is None:
+                        st.error("Anexe o comprovante para fechar a fatura.")
+                    else:
+                        registrar_pagamento_fatura(
+                            fatura_id,
+                            data_pagamento=data_pag,
+                            valor_pago=float(valor_pago),
+                            comprovante_nome=comprovante.name,
+                            comprovante_dados=comprovante.getvalue(),
+                        )
+                        st.success("Fatura fechada e comprovante anexado!")
+                        st.rerun()
 
 # --- Gerenciar categorias --------------------------------------------------
 with st.expander("🏷️ Gerenciar categorias (criar, renomear, excluir)"):
