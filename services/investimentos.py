@@ -226,6 +226,20 @@ def salvar_snapshot(data_ref: date, linhas: List[dict], cotacao_usd: float) -> N
             )
 
 
+def adicionar_posicao(linha: dict, data_ref: Optional[date] = None) -> date:
+    """Acrescenta UMA posição ao snapshot informado (ou ao mais recente; se não
+    houver nenhum, cria um para hoje). Retorna a data do snapshot afetado."""
+    datas = listar_datas()
+    if data_ref is None:
+        data_ref = datas[0] if datas else date.today()
+    existe = data_ref in datas
+    linhas = carregar_snapshot(data_ref) if existe else []
+    linhas.append(linha)
+    cot = cotacao_usd_do_snapshot(data_ref) if existe else COTACAO_USD_PADRAO
+    salvar_snapshot(data_ref, linhas, cotacao_usd=cot)
+    return data_ref
+
+
 def excluir_snapshot(data_ref: date) -> None:
     with get_session() as s:
         for p in s.scalars(

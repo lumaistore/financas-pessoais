@@ -15,6 +15,7 @@ from core.db import init_db
 from services.investimentos import (
     CLASSES,
     MOEDAS,
+    adicionar_posicao,
     carregar_snapshot,
     cotacao_usd_do_snapshot,
     criar_snapshot_inicial,
@@ -43,9 +44,73 @@ st.caption(
 if criar_snapshot_inicial():
     st.success("Carregamos sua carteira inicial (01/06/2026) a partir dos prints enviados. Revise os valores abaixo.")
 
+# ---------------------------------------------------------------------------
+# Adicionar aplicação (formulário guiado)
+# ---------------------------------------------------------------------------
+with st.expander("➕ Adicionar aplicação", expanded=not listar_datas()):
+    st.caption(
+        "Adicione uma ação, FII, ETF, fundo ou renda fixa. Para **ações/FIIs/ETFs** "
+        "preencha quantidade e preço. Para **renda fixa**, preencha o valor aplicado "
+        "e (se for CDI) o % do CDI e a data de aplicação."
+    )
+    with st.form("nova_aplicacao", clear_on_submit=True):
+        a1, a2, a3 = st.columns(3)
+        with a1:
+            novo_ativo = st.text_input("Ativo", placeholder="Ex.: BBSE3, CDB Banco X")
+            nova_classe = st.selectbox("Classe", CLASSES)
+            nova_moeda = st.selectbox("Moeda", MOEDAS)
+        with a2:
+            nova_qtd = st.number_input("Quantidade", min_value=0.0, step=1.0, format="%.6f", value=0.0)
+            novo_preco = st.number_input("Preço unitário", min_value=0.0, step=0.01, format="%.2f", value=0.0)
+            novo_ticker = st.text_input("Ticker (p/ cotação automática)", placeholder="Ex.: BBSE3, VIG")
+        with a3:
+            novo_investido = st.number_input("Valor investido / aplicado (R$)", min_value=0.0, step=100.0, format="%.2f", value=0.0)
+            novo_vm = st.number_input("Valor de mercado atual (R$)", min_value=0.0, step=100.0, format="%.2f", value=0.0,
+                                      help="Se preencher quantidade e preço, deixo em branco que eu calculo (qtd × preço).")
+
+        st.markdown("**Renda fixa (opcional):**")
+        rf1, rf2, rf3 = st.columns(3)
+        with rf1:
+            novo_indexador = st.selectbox("Índice", INDEXADORES)
+        with rf2:
+            nova_taxa = st.number_input("% do índice", min_value=0.0, step=1.0, format="%.1f", value=0.0,
+                                        help="Ex.: 102 para 102% do CDI.")
+        with rf3:
+            nova_aplicacao = st.date_input("Data de aplicação", value=None, format="DD/MM/YYYY")
+
+        enviar_aplic = st.form_submit_button("Adicionar aplicação", type="primary")
+        if enviar_aplic:
+            # Calcula o valor de mercado se não foi informado.
+            vm = novo_vm or None
+            if not vm and nova_qtd and novo_preco:
+                vm = nova_qtd * novo_preco
+            if not vm and novo_investido:
+                vm = novo_investido  # renda fixa: começa no valor aplicado
+            if not novo_ativo.strip():
+                st.error("Informe o nome do ativo.")
+            elif not vm:
+                st.error("Informe o valor de mercado (ou quantidade × preço, ou o valor aplicado).")
+            else:
+                linha = {
+                    "ativo": novo_ativo.strip(),
+                    "classe_ativo": nova_classe,
+                    "moeda": nova_moeda,
+                    "quantidade": nova_qtd or None,
+                    "preco_unitario": novo_preco or None,
+                    "valor_mercado": float(vm),
+                    "valor_investido": novo_investido or None,
+                    "ticker": novo_ticker.strip() or None,
+                    "indexador": novo_indexador or None,
+                    "taxa_indice": nova_taxa or None,
+                    "data_aplicacao": nova_aplicacao,
+                }
+                d = adicionar_posicao(linha)
+                st.success(f"'{novo_ativo.strip()}' adicionado ao snapshot de {d.strftime('%d/%m/%Y')}.")
+                st.rerun()
+
 datas = listar_datas()
 if not datas:
-    st.info("Nenhuma posição registrada ainda.")
+    st.info("Nenhuma posição registrada ainda. Use **➕ Adicionar aplicação** acima.")
     st.stop()
 
 # ---------------------------------------------------------------------------
