@@ -244,21 +244,25 @@ def _ler_pdf_texto(dados: bytes) -> dict:
 
 
 def _extrair_prestador(texto: str) -> Optional[str]:
-    """Lê o nome do prestador/emissor de uma NF, mesmo no formato NFS-e
-    padrão (com cabeçalhos 'EMITENTE DA NFS-e' e 'Nome / Nome Empresarial').
-    Cuidado: não pode capturar o nome do TOMADOR/cliente por engano."""
-    # 1) Tenta restringir a busca à seção do EMITENTE, parando no início do
-    # bloco do TOMADOR (que tem a mesma estrutura de campos).
+    """Lê o nome do prestador/emissor de uma NF. Robusto contra layouts em
+    colunas (pdfplumber pode emitir o texto em ordem inesperada). Estratégias
+    em camadas:
+      1) Busca por cabeçalhos ('Nome / Nome Empresarial', 'Razão Social' …)
+         dentro da seção do EMITENTE (antes do bloco do TOMADOR).
+      2) Procura linhas com sufixo societário (LTDA, S/A, EIRELI, ME, EPP).
+      3) Pega a linha vizinha ao primeiro CNPJ encontrado.
+    Em qualquer caso, evita capturar o nome do TOMADOR/cliente."""
+    # Seção do emitente: do início até o cabeçalho do tomador.
     tom = re.search(
-        r"\btomador\s+d[oe]\s*servi[çc]o\b|\bdestinat[áa]rio\b|"
-        r"\bdados\s+do\s+tomador\b|\bcliente\b",
+        r"\btomador\s+d[oe]?\s*servi[çc]o\b|\bdestinat[áa]rio\b|"
+        r"\bdados\s+do\s+tomador\b",
         texto, re.I,
     )
     secao = texto[: tom.start()] if tom else texto
 
-    # 2) Cabeçalhos que indicam o nome do prestador (em ordem de prioridade).
+    # -- Camada 1: cabeçalhos clássicos -------------------------------------
     cabecalhos = [
-        r"nome\s*/\s*nome\s+empresarial",  # NFS-e padrão
+        r"nome\s*/\s*nome\s+empresarial",
         r"raz[ãa]o\s+social",
         r"nome\s+empresarial",
         r"nome\s+do\s+(?:emitente|prestador)",
@@ -270,19 +274,47 @@ def _extrair_prestador(texto: str) -> Optional[str]:
             mh = re.search(cab, linha, re.I)
             if not mh:
                 continue
-            # (a) valor na mesma linha após o rótulo?
-            depois = linha[mh.end():].lstrip(" :\t")
+            depois = linha[mh.end():].lstrip(" :\t/")
             cand = _limpar_candidato(depois)
             if cand:
                 return cand
-            # (b) próximas linhas não-vazias que pareçam nome de empresa.
             for j in range(idx + 1, min(idx + 6, len(linhas))):
                 cand = _limpar_candidato(linhas[j])
                 if cand:
                     return cand
-                if linhas[j].strip():  # achou conteúdo mas não casou — para.
+                if linhas[j].strip():
                     break
-            break  # já tentou esse cabeçalho nessa linha; tenta próxima
+            break
+
+    # -- Camada 2: linha com sufixo de pessoa jurídica ---------------------
+    # Ex.: "DERMATHO - CLINICA DERMATOLOGICA ANTUNES E BRAZ LTDA"
+    sufixos = r"(?:LTDA|S/?\.?A\.?|EIRELI|MEI|ME|EPP|S\.?S\.?)"
+    for linha in linhas:
+        s = linha.strip()
+        if 8 <= len(s) <= 120 and re.search(rf"\b{sufixos}\b\.?\s*$", s, re.I):
+            cand = _limpar_candidato(s)
+            if cand:
+                return cand
+    # Também tenta sem âncora no fim (sufixo no meio do nome).
+    for linha in linhas:
+        s = linha.strip()
+        if 8 <= len(s) <= 120 and re.search(rf"\b{sufixos}\b", s, re.I):
+            cand = _limpar_candidato(s)
+            if cand:
+                return cand
+
+    # -- Camada 3: vizinhança do primeiro CNPJ -----------------------------
+    mc = re.search(r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b", secao)
+    if mc:
+        # Olha as 5 linhas em volta da linha do CNPJ.
+        antes = secao[: mc.start()].splitlines()
+        depois = secao[mc.end():].splitlines()
+        candidatos = [*antes[-4:], *depois[:4]]
+        for c in candidatos:
+            cand = _limpar_candidato(c)
+            if cand and re.search(r"[A-Z]{3}", cand):  # tem algo em maiúsculo
+                return cand
+
     return None
 
 
