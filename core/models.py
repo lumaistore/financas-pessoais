@@ -240,6 +240,27 @@ class DespesaMedica(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
+class Exame(Base):
+    """Resultado de exame médico anexado pelo usuário (PDF) com texto
+    extraído para busca e análise educativa por IA. NÃO substitui consulta
+    com médico — o disclaimer aparece em toda análise."""
+
+    __tablename__ = "exames"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[date] = mapped_column(Date, nullable=False)
+    nome: Mapped[str] = mapped_column(String, nullable=False)
+    categoria: Mapped[str] = mapped_column(String, default="Outros")
+    paciente: Mapped[str] = mapped_column(String, nullable=False)
+    laboratorio: Mapped[Optional[str]] = mapped_column(String)
+    observacao: Mapped[Optional[str]] = mapped_column(String)
+    arquivo_nome: Mapped[Optional[str]] = mapped_column(String)
+    arquivo_dados: Mapped[Optional[bytes]] = mapped_column(LargeBinary, deferred=True)
+    texto_extraido: Mapped[Optional[str]] = mapped_column(String, deferred=True)
+    analise_ia: Mapped[Optional[str]] = mapped_column(String, deferred=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
 class PerfilUsuario(Base):
     """Dados do usuário reutilizados em formulários (paciente padrão, etc.)."""
 
