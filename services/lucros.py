@@ -163,15 +163,16 @@ def ler_recibo_pdf(dados: bytes) -> dict:
                 continue
 
     valor_val = None
-    # Procura o valor logo após "Valor distribuído" / "R$" — ignora espaços
-    # e quebras de linha (no recibo, o valor pode estar numa linha abaixo do R$).
-    for fonte in (limpo, texto):
-        mv = re.search(
-            r"(?:Valor\s+distribu[íi]do[^0-9R$]*)?R\$[^\d-]*([\d\.,]+)",
-            fonte, re.I | re.S,
-        )
+    # Para o valor, REMOVEMOS os underscores (em vez de virar espaço). Assim
+    # casos como "R$ _6_.2_7_4_,4_4_______" viram "R$ 6.274,44       ".
+    # A captura aceita dígitos/espaço/ponto/vírgula (sem newline) para não
+    # estourar para a linha de baixo; depois removemos os espaços do meio.
+    sem_under = texto.replace("_", "")
+    for fonte in (sem_under, texto):
+        mv = re.search(r"R\$\s*([\d][\d \.,]{0,40})", fonte, re.I | re.S)
         if mv:
-            valor_val = _parse_valor(mv.group(1))
+            cand = re.sub(r"\s+", "", mv.group(1)).rstrip(".,")
+            valor_val = _parse_valor(cand)
             if valor_val:
                 break
 
