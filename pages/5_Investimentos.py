@@ -49,24 +49,41 @@ if criar_snapshot_inicial():
 # ---------------------------------------------------------------------------
 with st.expander("➕ Adicionar aplicação", expanded=not listar_datas()):
     st.caption(
-        "Adicione uma ação, FII, ETF, fundo ou renda fixa. Para **ações/FIIs/ETFs** "
-        "preencha quantidade e preço. Para **renda fixa**, preencha o valor aplicado "
-        "e (se for CDI) o % do CDI e a data de aplicação."
+        "**Ação / FII / ETF**: preencha **quantidade** e **preço de compra** — o "
+        "**valor pago é calculado automaticamente** (qtd × preço). Se informar o "
+        "**ticker**, o sistema **busca a cotação atual** e calcula o valor de "
+        "mercado de hoje. **Renda fixa**: preencha o valor aplicado + (se CDI) "
+        "% do índice e data de aplicação."
     )
     with st.form("nova_aplicacao", clear_on_submit=True):
         a1, a2, a3 = st.columns(3)
         with a1:
             novo_ativo = st.text_input("Ativo", placeholder="Ex.: BBSE3, CDB Banco X")
             nova_classe = st.selectbox("Classe", CLASSES)
-            nova_moeda = st.selectbox("Moeda", MOEDAS)
+            novo_ticker = st.text_input(
+                "Ticker (cotação automática)",
+                placeholder="Ex.: BBAS3, BBSE3, VIG",
+                help="Símbolo na bolsa. Com ticker, busco o preço de hoje e calculo o valor de mercado.",
+            )
         with a2:
             nova_qtd = st.number_input("Quantidade", min_value=0.0, step=1.0, format="%.6f", value=0.0)
-            novo_preco = st.number_input("Preço unitário", min_value=0.0, step=0.01, format="%.2f", value=0.0)
-            novo_ticker = st.text_input("Ticker (p/ cotação automática)", placeholder="Ex.: BBSE3, VIG")
+            novo_preco = st.number_input(
+                "Preço unitário de compra",
+                min_value=0.0, step=0.01, format="%.2f", value=0.0,
+                help="Quanto você pagou em cada cota/ação. Usado para o valor pago e preço médio.",
+            )
+            nova_moeda = st.selectbox("Moeda", MOEDAS)
         with a3:
-            novo_investido = st.number_input("Valor investido / aplicado (R$)", min_value=0.0, step=100.0, format="%.2f", value=0.0)
-            novo_vm = st.number_input("Valor de mercado atual (R$)", min_value=0.0, step=100.0, format="%.2f", value=0.0,
-                                      help="Se preencher quantidade e preço, deixo em branco que eu calculo (qtd × preço).")
+            novo_investido = st.number_input(
+                "Valor pago / aplicado (R$) — opcional",
+                min_value=0.0, step=100.0, format="%.2f", value=0.0,
+                help="Se preencher qtd × preço, eu calculo automaticamente. Preencha aqui só se quiser sobrescrever.",
+            )
+            novo_vm = st.number_input(
+                "Valor de mercado atual (R$) — opcional",
+                min_value=0.0, step=100.0, format="%.2f", value=0.0,
+                help="Se informar o ticker, eu busco a cotação atual e calculo. Preencha só para sobrescrever.",
+            )
 
         st.markdown("**Renda fixa (opcional):**")
         rf1, rf2, rf3 = st.columns(3)
@@ -80,16 +97,40 @@ with st.expander("➕ Adicionar aplicação", expanded=not listar_datas()):
 
         enviar_aplic = st.form_submit_button("Adicionar aplicação", type="primary")
         if enviar_aplic:
-            # Calcula o valor de mercado se não foi informado.
+            mensagens = []
+
+            # (1) Valor pago = quantidade × preço de compra (se não foi informado).
+            valor_pago = novo_investido or None
+            if not valor_pago and nova_qtd and novo_preco:
+                valor_pago = nova_qtd * novo_preco
+                mensagens.append(f"💰 Valor pago calculado: R$ {valor_pago:,.2f} ({nova_qtd:g} × {novo_preco:.2f}).")
+
+            # (2) Valor de mercado: busca cotação se tem ticker; senão usa
+            # qtd × preço de compra; senão valor pago.
             vm = novo_vm or None
+            if not vm and novo_ticker.strip() and nova_qtd:
+                from services.cotacoes import _yf_ticker, buscar_precos
+                tk = _yf_ticker(novo_ticker.strip(), nova_moeda)
+                with st.spinner(f"Buscando cotação de {tk}..."):
+                    precos = buscar_precos([tk])
+                preco_atual = precos.get(tk)
+                if preco_atual:
+                    vm = nova_qtd * preco_atual
+                    mensagens.append(
+                        f"📈 Cotação atual de {novo_ticker.upper()}: R$ {preco_atual:,.2f} → "
+                        f"valor de mercado R$ {vm:,.2f}."
+                    )
+                else:
+                    mensagens.append(f"⚠️ Não consegui buscar a cotação de {tk}. Usando preço de compra.")
             if not vm and nova_qtd and novo_preco:
                 vm = nova_qtd * novo_preco
-            if not vm and novo_investido:
-                vm = novo_investido  # renda fixa: começa no valor aplicado
+            if not vm and valor_pago:
+                vm = valor_pago
+
             if not novo_ativo.strip():
                 st.error("Informe o nome do ativo.")
             elif not vm:
-                st.error("Informe o valor de mercado (ou quantidade × preço, ou o valor aplicado).")
+                st.error("Preencha pelo menos quantidade + preço, ou um valor de mercado.")
             else:
                 linha = {
                     "ativo": novo_ativo.strip(),
@@ -98,13 +139,15 @@ with st.expander("➕ Adicionar aplicação", expanded=not listar_datas()):
                     "quantidade": nova_qtd or None,
                     "preco_unitario": novo_preco or None,
                     "valor_mercado": float(vm),
-                    "valor_investido": novo_investido or None,
-                    "ticker": novo_ticker.strip() or None,
+                    "valor_investido": valor_pago,
+                    "ticker": novo_ticker.strip().upper() or None,
                     "indexador": novo_indexador or None,
                     "taxa_indice": nova_taxa or None,
                     "data_aplicacao": nova_aplicacao,
                 }
                 d = adicionar_posicao(linha)
+                for m in mensagens:
+                    st.info(m)
                 st.success(f"'{novo_ativo.strip()}' adicionado ao snapshot de {d.strftime('%d/%m/%Y')}.")
                 st.rerun()
 
