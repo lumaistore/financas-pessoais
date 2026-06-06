@@ -70,28 +70,46 @@ def _parse_data_br(s: Optional[str]) -> Optional[date]:
 # Ordem importa: o primeiro match vence. Listei dos mais específicos para os
 # mais genéricos.
 PALAVRAS_TIPO = [
-    ("Plano de saúde", ["plano de saúde", "operadora de saúde", "convênio médico", "amil", "bradesco saúde", "unimed", "hapvida", "sulamérica saúde", "porto seguro saúde"]),
-    ("Dentista", ["odontolog", "dental", "dentário", "dentista", "ortodont", "endodont", "periodont", "implantodont"]),
+    ("Plano de saúde", ["plano de saúde", "operadora de saúde", "convênio médico",
+                         "amil", "bradesco saúde", "unimed", "hapvida",
+                         "sulamérica saúde", "porto seguro saúde"]),
+    ("Dentista", ["odontolog", "dental", "dentário", "dentista", "ortodont",
+                  "endodont", "periodont", "implantodont"]),
     ("Psicólogo", ["psicolog", "psicoterap"]),
     ("Psiquiatra", ["psiquiatr"]),
     ("Fisioterapeuta", ["fisioterap", "rpg ", "pilates clínic"]),
     ("Fonoaudiólogo", ["fonoaudiolog", "fono "]),
-    ("Hospital / Internação", ["hospital", "internação", "internamento", "diária hospital", "pronto socorro", "ps "]),
+    # Especialidades médicas e consultórios vêm ANTES de hospital (uma NF de
+    # consultório pode mencionar um endereço com "hospital"; não significa
+    # que a despesa é uma internação).
+    ("Consulta médica", ["dermatolog", "cardiolog", "ortoped", "ginecolog",
+                          "pediatr", "urolog", "neurolog", "endocrinolog",
+                          "gastroenterolog", "oftalmolog", "otorrinolaringolog",
+                          "reumatolog", "nefrolog", "alergista", "alergolog",
+                          "geriatr", "infectolog", "obstetri", "consultorio",
+                          "consultório", "consulta", "atendimento médico",
+                          "clínica médica", "clinica medica"]),
+    ("Exame", ["exame", "laborat", "análise clínic", "radiograf", "raio-x",
+               "raio x", "ressonância", "tomograf", "ultrassom",
+               "ultra-sonografia", "ecograf", "endoscop", "colonoscop",
+               "mamograf", "densitometr", "biópsia", "fleury", "dasa",
+               "hermes pardini", "labi exames", "instituto de imagens", "ct ",
+               "cintilograf"]),
+    # Hospital só dispara em termos que indicam internação/atendimento
+    # hospitalar de fato (a palavra solta "hospital" pode aparecer num
+    # endereço da NF de consultório).
+    ("Hospital / Internação", ["internação", "internamento", "diária hospital",
+                                 "pronto socorro", "atendimento hospitalar",
+                                 "hospital albert", "hospital sírio",
+                                 "hospital israelita"]),
     ("Cirurgia", ["cirurgia", "cirurg", "procedimento cirúrg", "centro cirúrg"]),
-    ("Exame", ["exame", "laborat", "análise clínic", "radiograf", "raio-x", "raio x", "ressonância", "tomograf",
-              "ultrassom", "ultra-sonografia", "ecograf", "endoscop", "colonoscop", "mamograf", "densitometr",
-              "biópsia", "fleury", "dasa", "hermes pardini", "labi exames", "instituto de imagens", "ct ",
-              "cintilograf"]),
-    ("Aparelho ortopédico / prótese", ["prótese", "ortótese", "órtese", "aparelho ortopéd", "tipoia ", "cinta abdominal"]),
-    ("Aparelho auditivo / visual", ["aparelho auditivo", "lente de contato", "lentes de contato",
-                                     "armação", "óculos de grau", "audiometria", "fonoaudiologia auditiva"]),
+    ("Aparelho ortopédico / prótese", ["prótese", "ortótese", "órtese",
+                                         "aparelho ortopéd", "tipoia ",
+                                         "cinta abdominal"]),
+    ("Aparelho auditivo / visual", ["aparelho auditivo", "lente de contato",
+                                     "lentes de contato", "armação",
+                                     "óculos de grau", "audiometria"]),
     ("Medicamento (em internação)", ["medicament", "remédio", "farmacêut"]),
-    # 'consulta médica' deixa por último para não atropelar especialidades acima
-    ("Consulta médica", ["dermatolog", "cardiolog", "ortoped", "ginecolog", "pediatr",
-                          "urolog", "neurolog", "endocrinolog", "gastroenterolog",
-                          "oftalmolog", "otorrinolaringolog", "reumatolog", "nefrolog",
-                          "alergista", "alergolog", "geriatr", "infectolog",
-                          "consulta", "atendimento médico", "clínica médica", "médic"]),
 ]
 
 
@@ -209,17 +227,13 @@ def _ler_pdf_texto(dados: bytes) -> dict:
             else:
                 out["cnpj_cpf"] = f"{n[:3]}.{n[3:6]}.{n[6:9]}-{n[9:]}"
 
-    # Prestador: linha próxima a 'razão social', 'nome', ou logo após o CNPJ.
-    for padrao in [
-        r"raz[ãa]o\s+social[:\s]*([^\n]+)",
-        r"nome\s+do\s+(?:emitente|prestador)[:\s]*([^\n]+)",
-    ]:
-        m = re.search(padrao, texto, re.I)
-        if m:
-            cand = m.group(1).strip()
-            if 3 <= len(cand) <= 80:
-                out["prestador"] = cand
-                break
+    # Prestador (emissor da NFS-e). Estratégia: isola a seção do EMITENTE
+    # (antes do "TOMADOR DO SERVIÇO") e procura o campo "Nome / Nome
+    # Empresarial" ou "Razão Social". Pega o que estiver na mesma linha
+    # depois do rótulo, ou na próxima linha não-vazia que pareça um nome.
+    prestador = _extrair_prestador(texto)
+    if prestador:
+        out["prestador"] = prestador
 
     # Tipo: infere por palavras-chave do texto inteiro.
     tipo = _inferir_tipo(texto)
@@ -227,6 +241,67 @@ def _ler_pdf_texto(dados: bytes) -> dict:
         out["tipo"] = tipo
 
     return out
+
+
+def _extrair_prestador(texto: str) -> Optional[str]:
+    """Lê o nome do prestador/emissor de uma NF, mesmo no formato NFS-e
+    padrão (com cabeçalhos 'EMITENTE DA NFS-e' e 'Nome / Nome Empresarial').
+    Cuidado: não pode capturar o nome do TOMADOR/cliente por engano."""
+    # 1) Tenta restringir a busca à seção do EMITENTE, parando no início do
+    # bloco do TOMADOR (que tem a mesma estrutura de campos).
+    tom = re.search(
+        r"\btomador\s+d[oe]\s*servi[çc]o\b|\bdestinat[áa]rio\b|"
+        r"\bdados\s+do\s+tomador\b|\bcliente\b",
+        texto, re.I,
+    )
+    secao = texto[: tom.start()] if tom else texto
+
+    # 2) Cabeçalhos que indicam o nome do prestador (em ordem de prioridade).
+    cabecalhos = [
+        r"nome\s*/\s*nome\s+empresarial",  # NFS-e padrão
+        r"raz[ãa]o\s+social",
+        r"nome\s+empresarial",
+        r"nome\s+do\s+(?:emitente|prestador)",
+        r"^nome\s*[:.]",
+    ]
+    linhas = secao.split("\n")
+    for idx, linha in enumerate(linhas):
+        for cab in cabecalhos:
+            mh = re.search(cab, linha, re.I)
+            if not mh:
+                continue
+            # (a) valor na mesma linha após o rótulo?
+            depois = linha[mh.end():].lstrip(" :\t")
+            cand = _limpar_candidato(depois)
+            if cand:
+                return cand
+            # (b) próximas linhas não-vazias que pareçam nome de empresa.
+            for j in range(idx + 1, min(idx + 6, len(linhas))):
+                cand = _limpar_candidato(linhas[j])
+                if cand:
+                    return cand
+                if linhas[j].strip():  # achou conteúdo mas não casou — para.
+                    break
+            break  # já tentou esse cabeçalho nessa linha; tenta próxima
+    return None
+
+
+def _limpar_candidato(s: str) -> Optional[str]:
+    """Devolve `s` limpo se parece um nome válido de empresa/pessoa; senão None."""
+    s = (s or "").strip(" \t-:|")
+    if not s or len(s) < 5 or len(s) > 120:
+        return None
+    # Descarta linhas que são na verdade outro rótulo / cabeçalho.
+    prefixos_invalidos = (
+        "cnpj", "cpf", "nif", "endere", "e-mail", "telefone", "fone",
+        "inscri", "tomador", "raz", "nome", "munic", "uf", "cep",
+        "valor", "simples", "regime", "data", "n[uú]mero",
+    )
+    sl = s.lower()
+    for p in prefixos_invalidos:
+        if re.match(p, sl):
+            return None
+    return s
 
 
 # ---------------------------------------------------------------------------
