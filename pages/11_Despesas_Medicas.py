@@ -21,6 +21,7 @@ from services.despesas_medicas import (
     total_pago,
     total_reembolsado,
 )
+from services.leitor_nf import ler_nf
 
 init_db()
 
@@ -41,26 +42,64 @@ st.info(
 ano = int(st.number_input("Ano-base", min_value=2020, max_value=2100, value=date.today().year, step=1))
 
 # ---------------------------------------------------------------------------
-# Nova despesa
+# Nova despesa — sobe a NF e o sistema lê os campos automaticamente
 # ---------------------------------------------------------------------------
 st.subheader("➕ Adicionar despesa médica")
-with st.form("nova_med", clear_on_submit=True):
+st.caption(
+    "Suba a nota fiscal/recibo (PDF ou foto). O sistema lê data, valor, "
+    "prestador e CNPJ sozinho — você só confere e ajusta o que faltar."
+)
+
+arq = st.file_uploader(
+    "Nota fiscal / recibo (PDF ou imagem)",
+    type=["pdf", "png", "jpg", "jpeg", "webp"],
+    key="nf_upload",
+)
+
+# Quando muda o arquivo, lê e guarda em session_state.
+if arq is not None:
+    if st.session_state.get("nf_nome_atual") != arq.name:
+        with st.spinner("Lendo a nota fiscal..."):
+            st.session_state["nf_lido"] = ler_nf(arq.getvalue(), arq.name)
+            st.session_state["nf_bytes"] = arq.getvalue()
+            st.session_state["nf_nome_atual"] = arq.name
+    lido = st.session_state.get("nf_lido", {})
+    achados = [
+        f"📅 {lido['data'].strftime('%d/%m/%Y')}" if lido.get("data") else None,
+        f"💰 R$ {lido['valor_pago']:,.2f}" if lido.get("valor_pago") else None,
+        f"🏥 {lido['prestador']}" if lido.get("prestador") else None,
+        f"📄 {lido['cnpj_cpf']}" if lido.get("cnpj_cpf") else None,
+    ]
+    achados = [a for a in achados if a]
+    if achados:
+        st.success("Li do documento: " + " · ".join(achados))
+    else:
+        st.info("Não consegui ler automaticamente — preencha os campos abaixo.")
+
+lido = st.session_state.get("nf_lido") or {}
+
+with st.form("nova_med", clear_on_submit=False):
     c1, c2, c3 = st.columns(3)
     with c1:
-        data_ = st.date_input("Data", value=date.today(), format="DD/MM/YYYY")
-        tipo = st.selectbox("Tipo", TIPOS)
+        data_ = st.date_input("Data", value=lido.get("data") or date.today(), format="DD/MM/YYYY")
+        tipo_default = lido.get("tipo") if lido.get("tipo") in TIPOS else "Outros"
+        tipo = st.selectbox("Tipo", TIPOS, index=TIPOS.index(tipo_default))
     with c2:
-        paciente = st.text_input("Paciente", placeholder="Você mesmo ou nome do dependente")
-        prestador = st.text_input("Prestador", placeholder="Médico / clínica / hospital / plano")
+        paciente = st.text_input("Paciente", value=lido.get("paciente") or "",
+                                 placeholder="Você mesmo ou nome do dependente")
+        prestador = st.text_input("Prestador", value=lido.get("prestador") or "",
+                                  placeholder="Médico / clínica / hospital / plano")
     with c3:
-        cnpj_cpf = st.text_input("CNPJ/CPF do prestador", placeholder="exigido pela Receita")
-        valor_pago = st.number_input("Valor pago (R$)", min_value=0.0, step=50.0, format="%.2f")
+        cnpj_cpf = st.text_input("CNPJ/CPF do prestador", value=lido.get("cnpj_cpf") or "",
+                                 placeholder="exigido pela Receita")
+        valor_pago = st.number_input("Valor pago (R$)", min_value=0.0, step=50.0, format="%.2f",
+                                     value=float(lido.get("valor_pago") or 0.0))
     c4, c5 = st.columns([1, 2])
     with c4:
         valor_reemb = st.number_input("Reembolsado pelo plano (R$)", min_value=0.0, step=50.0, format="%.2f")
     with c5:
         obs = st.text_input("Observação (opcional)")
-    arq = st.file_uploader("Nota fiscal / recibo (PDF ou imagem)", type=["pdf", "png", "jpg", "jpeg"])
+
     if st.form_submit_button("Adicionar despesa", type="primary"):
         if not paciente.strip() or not prestador.strip():
             st.error("Informe o paciente e o prestador.")
@@ -70,9 +109,12 @@ with st.form("nova_med", clear_on_submit=True):
             adicionar(
                 data_, tipo, paciente, prestador, cnpj_cpf,
                 float(valor_pago), float(valor_reemb), obs,
-                arq.name if arq else None,
-                arq.getvalue() if arq else None,
+                st.session_state.get("nf_nome_atual") if arq else None,
+                st.session_state.get("nf_bytes") if arq else None,
             )
+            # Limpa o cache do upload para a próxima despesa.
+            for k in ("nf_lido", "nf_bytes", "nf_nome_atual"):
+                st.session_state.pop(k, None)
             st.success("Despesa registrada.")
             st.rerun()
 
