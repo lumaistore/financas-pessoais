@@ -97,7 +97,13 @@ def _parse_valor(s: str) -> Optional[float]:
 
 def ler_recibo_pdf(dados: bytes) -> dict:
     """Lê um PDF de recibo e tenta extrair {valor, data}. Vazio se não achar
-    (ex.: PDF escaneado/imagem) — aí o usuário preenche à mão."""
+    (ex.: PDF escaneado/imagem) — aí o usuário preenche à mão.
+
+    Detalhe: alguns recibos vêm do modelo em branco com '_____' como linha
+    pra preencher; ao digitar em cima, os caracteres ficam intercalados com
+    underscores (ex.: 'L_U_M_A_I' = 'LUMAI', '0_5_/0_1_/2_0_26' = '05/01/2026').
+    Removemos os '_' antes da extração para esses casos funcionarem.
+    """
     import re
 
     import pdfplumber
@@ -110,23 +116,65 @@ def ler_recibo_pdf(dados: bytes) -> dict:
     except Exception:
         return {"valor": None, "data": None}
 
+    # Versão "limpa": sem os underscores do template em branco. Mantemos o
+    # original também, caso algum recibo legítimo tenha '_' no meio.
+    limpo = texto.replace("_", " ")
+
     data_val = None
-    m = re.search(r"distribui[çc][ãa]o[:\s]*?(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{2,4})", texto, re.I)
-    if not m:
-        m = re.search(r"(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})", texto)
-    if m:
-        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        if y < 100:
-            y += 2000
-        try:
-            data_val = date(y, mo, d)
-        except ValueError:
-            data_val = None
+    for fonte in (limpo, texto):
+        # Tenta perto da palavra "distribuição" primeiro (mais confiável).
+        m = re.search(
+            r"distribui[çc][ãa]o[^0-9]{0,40}(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{2,4})",
+            fonte, re.I,
+        )
+        if not m:
+            m = re.search(r"(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})", fonte)
+        if m:
+            d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if y < 100:
+                y += 2000
+            try:
+                data_val = date(y, mo, d)
+                break
+            except ValueError:
+                pass
+    # Fallback: textos onde os dígitos da data ficaram separados por espaços
+    # (ex.: "Data da distribuição: 0 5 / 0 1 / 2 0 26" — original veio com
+    # underscores entre os dígitos). Procura especificamente "Data da
+    # distribuição" e extrai os 6-8 dígitos seguintes.
+    if data_val is None:
+        # Itera todas as ocorrências de "distribuição" — pode haver 2+ no PDF
+        # (uma no título, outra no campo). Aceita a primeira que tiver dígitos.
+        for m in re.finditer(r"(?:Data\s+da\s+)?distribui[çc][ãa]o[^A-Za-z]{0,80}", limpo, re.I):
+            trecho = m.group(0)
+            digitos = re.sub(r"\D", "", trecho)
+            if len(digitos) < 6:
+                continue
+            try:
+                d = int(digitos[0:2])
+                mo = int(digitos[2:4])
+                if len(digitos) >= 8:
+                    y = int(digitos[4:8])
+                else:
+                    y = 2000 + int(digitos[4:6])
+                data_val = date(y, mo, d)
+                break
+            except ValueError:
+                continue
 
     valor_val = None
-    mv = re.search(r"R\$\s*([\d\.,]+)", texto)
-    if mv:
-        valor_val = _parse_valor(mv.group(1))
+    # Procura o valor logo após "Valor distribuído" / "R$" — ignora espaços
+    # e quebras de linha (no recibo, o valor pode estar numa linha abaixo do R$).
+    for fonte in (limpo, texto):
+        mv = re.search(
+            r"(?:Valor\s+distribu[íi]do[^0-9R$]*)?R\$[^\d-]*([\d\.,]+)",
+            fonte, re.I | re.S,
+        )
+        if mv:
+            valor_val = _parse_valor(mv.group(1))
+            if valor_val:
+                break
+
     return {"valor": valor_val, "data": data_val}
 
 
