@@ -219,6 +219,27 @@ class CarteiraHistorico(Base):
     total_brl: Mapped[float] = mapped_column(Float, nullable=False)
 
 
+class DespesaMedica(Base):
+    """Despesa médica dedutível no IR. Cada lançamento guarda os dados
+    exigidos pela Receita: CPF/CNPJ do prestador, nome do paciente e valor
+    efetivamente dedutível (pago − reembolsado pelo plano)."""
+
+    __tablename__ = "despesas_medicas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[date] = mapped_column(Date, nullable=False)
+    tipo: Mapped[str] = mapped_column(String, default="consulta")
+    paciente: Mapped[str] = mapped_column(String, nullable=False)
+    prestador: Mapped[str] = mapped_column(String, nullable=False)
+    cnpj_cpf: Mapped[Optional[str]] = mapped_column(String)
+    valor_pago: Mapped[float] = mapped_column(Float, nullable=False)
+    valor_reembolsado: Mapped[float] = mapped_column(Float, default=0.0)
+    observacao: Mapped[Optional[str]] = mapped_column(String)
+    comprovante_nome: Mapped[Optional[str]] = mapped_column(String)
+    comprovante_dados: Mapped[Optional[bytes]] = mapped_column(LargeBinary, deferred=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
 class RetiradaLucroConfig(Base):
     """Dados fixos do recibo de distribuição de lucros (singleton)."""
 
