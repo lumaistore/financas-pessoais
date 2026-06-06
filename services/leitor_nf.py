@@ -331,16 +331,32 @@ def _limpar_candidato(s: str) -> Optional[str]:
         "cnpj", "cpf", "nif", "endere", "e-mail", "telefone", "fone",
         "inscri", "tomador", "raz", "nome", "munic", "uf", "cep",
         "valor", "simples", "regime", "data", "n[uú]mero",
-        # NFS-e nacional: cabeçalhos do bloco de chave de acesso/QR.
+        # NFS-e nacional: cabeçalhos da seção do emitente + chave de
+        # acesso/QR. Concatenados também (sem espaço) por causa da
+        # extração colunar do pdfplumber.
+        "emitente", "prestador", "discrim",
         "chave", "acesso", "portal", "verifica", "autenti", "c[óo]digo",
-        "discrim", "servi[çc]o", "nfs", "n[ºo°]", "p[áa]gina",
+        "servi[çc]o", "nfs", "n[ºo°]", "p[áa]gina",
+        "tomadorda",  # 'TOMADORDA' colado
     )
     for p in prefixos_invalidos:
         if re.match(p, sl):
             return None
 
-    # 2) Texto colado sem espaços (típico de cabeçalho/QR extraído por
-    # pdfplumber). Nomes de empresa têm pelo menos 2 espaços.
+    # 2) Cabeçalhos de coluna concatenados (ex.: 'CNPJ/CPF/NIF'). Sinal:
+    # mais de uma barra com letras coladas (CNPJ/CPF/NIF tem duas barras
+    # nesse formato; 'S/A' tem só uma e passa).
+    if len(re.findall(r"[A-Za-z]/[A-Za-z]", s)) >= 2:
+        return None
+    # Se aparecem mais de 2 termos que costumam ser cabeçalhos juntos.
+    sl_compacto = re.sub(r"\s+", " ", sl)
+    indicios = ("cnpj", "cpf", "nif", "inscrição", "inscricao", "telefone",
+                "e-mail", "munic", "uf", "cep", "regime", "simples")
+    if sum(1 for ind in indicios if ind in sl_compacto) >= 2:
+        return None
+
+    # 3) Texto colado sem espaços (típico de cabeçalho/QR extraído por
+    # pdfplumber). Nomes de empresa têm pelo menos 2 palavras com espaço.
     sem_marcas = re.sub(r"[^\w\s]", " ", s)  # tira pontuação
     palavras = sem_marcas.split()
     if len(palavras) < 2:
