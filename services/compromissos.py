@@ -12,7 +12,9 @@ from typing import List, Optional
 from sqlalchemy import select
 
 from core.db import get_session
-from core.models import Compromisso, CompromissoParcela
+from core.models import Compromisso, CompromissoParcela, PagamentoCompromisso
+
+TIPOS_PAGAMENTO = ["entrada", "parcela", "seguro", "taxa", "amortização", "outros"]
 
 TIPOS = ["financiamento", "parcelado", "imovel"]
 
@@ -310,3 +312,94 @@ def seed_imoveis_sp() -> int:
     `adicionar_imovel` com o cronograma do seu contrato). Retorna 0 aqui.
     """
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Pagamentos avulsos (lançados manualmente, com comprovante) — útil para
+# financiamentos em evolução de obra (valor variável mês a mês).
+# ---------------------------------------------------------------------------
+def adicionar_pagamento(
+    compromisso_id: int,
+    data_: date,
+    valor: float,
+    tipo: str = "parcela",
+    descricao: Optional[str] = None,
+    comprovante_nome: Optional[str] = None,
+    comprovante_dados: Optional[bytes] = None,
+) -> int:
+    with get_session() as s:
+        p = PagamentoCompromisso(
+            compromisso_id=compromisso_id,
+            data=data_,
+            valor=float(valor),
+            tipo=(tipo if tipo in TIPOS_PAGAMENTO else "outros"),
+            descricao=(descricao or "").strip() or None,
+            comprovante_nome=comprovante_nome,
+            comprovante_dados=comprovante_dados,
+        )
+        s.add(p)
+        s.flush()
+        return p.id
+
+
+def listar_pagamentos(compromisso_id: int) -> List[dict]:
+    with get_session() as s:
+        rs = s.scalars(
+            select(PagamentoCompromisso)
+            .where(PagamentoCompromisso.compromisso_id == compromisso_id)
+            .order_by(PagamentoCompromisso.data.desc())
+        ).all()
+        return [
+            {
+                "id": p.id,
+                "data": p.data,
+                "valor": p.valor,
+                "tipo": p.tipo,
+                "descricao": p.descricao,
+                "tem_comprovante": p.comprovante_nome is not None,
+                "comprovante_nome": p.comprovante_nome,
+            }
+            for p in rs
+        ]
+
+
+def excluir_pagamento(pagamento_id: int) -> None:
+    with get_session() as s:
+        p = s.get(PagamentoCompromisso, pagamento_id)
+        if p:
+            s.delete(p)
+
+
+def comprovante_pagamento(pagamento_id: int):
+    with get_session() as s:
+        p = s.get(PagamentoCompromisso, pagamento_id)
+        if not p or p.comprovante_dados is None:
+            return None, None
+        return p.comprovante_nome, p.comprovante_dados
+
+
+def total_pago_compromisso(compromisso_id: int) -> float:
+    return sum(p["valor"] for p in listar_pagamentos(compromisso_id))
+
+
+# ---------------------------------------------------------------------------
+# Cadastro do imóvel/financiamento de Carneiros (Caixa SFH)
+# ---------------------------------------------------------------------------
+def cadastrar_carneiros() -> Optional[int]:
+    """Cria o compromisso do Apto Carneiros (Caixa SFH) se ainda não existir.
+    Retorna o id criado ou None se já existia. Os pagamentos reais são
+    lançados via `adicionar_pagamento`."""
+    nome = "Apto Carneiros (Caixa SFH)"
+    existentes = {r["nome"] for r in listar_compromissos()}
+    if nome in existentes:
+        return None
+    # ~30 anos de financiamento; encargo médio estimado da fase de obra.
+    cid = adicionar_compromisso(
+        nome=nome,
+        valor_parcela=6401.12,
+        total_parcelas=360,
+        parcelas_pagas=0,
+        tipo="financiamento",
+        dia_vencimento=10,
+    )
+    return cid

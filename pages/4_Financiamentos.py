@@ -7,14 +7,21 @@ import streamlit as st
 from core.db import init_db
 from services.compromissos import (
     TIPOS,
+    TIPOS_PAGAMENTO,
     adicionar_compromisso,
+    adicionar_pagamento,
+    cadastrar_carneiros,
+    comprovante_pagamento,
     contar_ativos,
     definir_parcelas_pagas,
     excluir_compromisso,
+    excluir_pagamento,
     listar_compromissos,
+    listar_pagamentos,
     proximas_parcelas,
     registrar_pagamento,
     total_financiamento_a_contratar,
+    total_pago_compromisso,
     total_saldo_devedor,
 )
 
@@ -64,6 +71,26 @@ with st.expander("➕ Novo compromisso", expanded=not listar_compromissos()):
                 )
                 st.success(f"Compromisso '{nome}' adicionado.")
                 st.rerun()
+
+# --- Botão rápido: cadastrar Carneiros (Caixa SFH) ------------------------
+ja_tem_carneiros = any(
+    "Carneiros" in c["nome"] for c in listar_compromissos()
+)
+if not ja_tem_carneiros:
+    with st.expander("🏖️ Carregar imóvel de Carneiros (Caixa SFH)"):
+        st.write(
+            "Cadastra o financiamento Caixa SFH do apartamento em Carneiros "
+            "(R$ 693.000 total · entrada R$ 120.080,21 · financiamento "
+            "R$ 572.919,79 · encargo mensal estimado R$ 6.401,12 em fase de obra). "
+            "Você lançará os pagamentos reais (com comprovante) abaixo."
+        )
+        if st.button("Cadastrar Carneiros"):
+            cid = cadastrar_carneiros()
+            if cid:
+                st.success("Carneiros cadastrado.")
+            else:
+                st.info("Já estava cadastrado.")
+            st.rerun()
 
 st.divider()
 
@@ -176,7 +203,8 @@ def render_uniforme(c: dict) -> None:
 
         a1, a2, a3 = st.columns([1, 2, 1])
         with a1:
-            if c["ativo"] and st.button("Registrar pagamento", key=f"pg_{c['id']}"):
+            if c["ativo"] and st.button("Registrar pagamento +1", key=f"pg_{c['id']}",
+                                        help="Avança 1 parcela (valor padrão)."):
                 registrar_pagamento(c["id"])
                 st.rerun()
         with a2:
@@ -194,6 +222,71 @@ def render_uniforme(c: dict) -> None:
             if st.button("Excluir", key=f"del_{c['id']}", type="secondary"):
                 excluir_compromisso(c["id"])
                 st.rerun()
+
+        # --- Pagamentos avulsos com comprovante ----------------------------
+        renderizar_pagamentos(c["id"], c["nome"])
+
+
+def renderizar_pagamentos(compromisso_id: int, nome: str) -> None:
+    """Bloco de lançamento + lista de pagamentos avulsos (com comprovante).
+    Útil para fase de evolução de obra, valores variáveis."""
+    pagamentos = listar_pagamentos(compromisso_id)
+    total = sum(p["valor"] for p in pagamentos)
+    with st.expander(f"💸 Pagamentos lançados ({len(pagamentos)}) · R$ {total:,.2f}"):
+        with st.form(f"pg_form_{compromisso_id}", clear_on_submit=True):
+            pc1, pc2, pc3 = st.columns(3)
+            with pc1:
+                dt = st.date_input("Data do pagamento", value=date.today(),
+                                   format="DD/MM/YYYY", key=f"pg_dt_{compromisso_id}")
+            with pc2:
+                vl = st.number_input("Valor (R$)", min_value=0.0, step=100.0,
+                                     format="%.2f", key=f"pg_vl_{compromisso_id}")
+            with pc3:
+                tp = st.selectbox("Tipo", TIPOS_PAGAMENTO,
+                                  index=TIPOS_PAGAMENTO.index("parcela"),
+                                  key=f"pg_tp_{compromisso_id}")
+            desc = st.text_input("Descrição (opcional)",
+                                 placeholder="Ex.: Encargo mensal jan/2026",
+                                 key=f"pg_ds_{compromisso_id}")
+            compr = st.file_uploader("Comprovante (PDF ou imagem)",
+                                     type=["pdf", "png", "jpg", "jpeg"],
+                                     key=f"pg_up_{compromisso_id}")
+            if st.form_submit_button("Lançar pagamento", type="primary"):
+                if vl <= 0:
+                    st.error("Informe um valor maior que zero.")
+                else:
+                    adicionar_pagamento(
+                        compromisso_id, dt, float(vl), tp, desc,
+                        compr.name if compr else None,
+                        compr.getvalue() if compr else None,
+                    )
+                    st.success(f"Pagamento de R$ {vl:,.2f} registrado.")
+                    st.rerun()
+
+        if pagamentos:
+            st.caption(f"**Total já pago: R$ {total:,.2f}**")
+            for p in pagamentos:
+                col1, col2 = st.columns([5, 1])
+                with col1:
+                    extras = []
+                    if p["descricao"]:
+                        extras.append(p["descricao"])
+                    extra_str = " · " + " · ".join(extras) if extras else ""
+                    icone = "📎" if p["tem_comprovante"] else "  "
+                    st.write(
+                        f"{icone} **{p['data'].strftime('%d/%m/%Y')}** · "
+                        f"{p['tipo']} · **R$ {p['valor']:,.2f}**{extra_str}"
+                    )
+                with col2:
+                    if p["tem_comprovante"]:
+                        nome_a, dados_a = comprovante_pagamento(p["id"])
+                        st.download_button("📎", data=dados_a, file_name=nome_a,
+                                           key=f"dlpg_{p['id']}",
+                                           help="Baixar comprovante")
+                    if st.button("🗑️", key=f"delpg_{p['id']}",
+                                 help="Excluir este lançamento"):
+                        excluir_pagamento(p["id"])
+                        st.rerun()
 
 
 # --- Detalhe de cada compromisso -----------------------------------------

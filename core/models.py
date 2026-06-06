@@ -163,6 +163,26 @@ class Compromisso(Base):
     )
 
 
+class PagamentoCompromisso(Base):
+    """Pagamento real lançado contra um compromisso (financiamento/imóvel)
+    — útil para fase de evolução de obra (valores variáveis) ou quando o
+    usuário quer o histórico com comprovantes."""
+
+    __tablename__ = "pagamentos_compromisso"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    compromisso_id: Mapped[int] = mapped_column(ForeignKey("compromissos.id"))
+    data: Mapped[date] = mapped_column(Date, nullable=False)
+    valor: Mapped[float] = mapped_column(Float, nullable=False)
+    tipo: Mapped[str] = mapped_column(String, default="parcela")  # entrada / parcela / seguro / taxa / outros
+    descricao: Mapped[Optional[str]] = mapped_column(String)
+    comprovante_nome: Mapped[Optional[str]] = mapped_column(String)
+    comprovante_dados: Mapped[Optional[bytes]] = mapped_column(LargeBinary, deferred=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+    compromisso: Mapped["Compromisso"] = relationship()
+
+
 class CompromissoParcela(Base):
     """Tranche do cronograma de um compromisso do tipo 'imovel'."""
 
