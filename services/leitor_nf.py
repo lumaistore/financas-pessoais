@@ -169,7 +169,9 @@ def _ler_pdf_texto(dados: bytes) -> dict:
         texto = ""
         with pdfplumber.open(io.BytesIO(dados)) as pdf:
             for pg in pdf.pages[:2]:  # nota costuma caber em 1-2 páginas
-                texto += (pg.extract_text() or "") + "\n"
+                # x_tolerance=2 preserva os espaços em layouts colunares
+                # (típico da NFS-e nacional, ex.: Recife).
+                texto += (pg.extract_text(x_tolerance=2) or "") + "\n"
     except Exception:
         return {}
 
@@ -261,10 +263,12 @@ def _extrair_prestador(texto: str) -> Optional[str]:
     secao = texto[: tom.start()] if tom else texto
 
     # -- Camada 1: cabeçalhos clássicos -------------------------------------
+    # \s* aceita o formato com OU sem espaços (NFS-e nacional do Recife,
+    # por ex., emite 'Nome/NomeEmpresarial' colado).
     cabecalhos = [
-        r"nome\s*/\s*nome\s+empresarial",
-        r"raz[ãa]o\s+social",
-        r"nome\s+empresarial",
+        r"nome\s*/?\s*nome\s*empresarial",
+        r"raz[ãa]o\s*social",
+        r"nome\s*empresarial",
         r"nome\s+do\s+(?:emitente|prestador)",
         r"^nome\s*[:.]",
     ]
@@ -275,11 +279,11 @@ def _extrair_prestador(texto: str) -> Optional[str]:
             if not mh:
                 continue
             depois = linha[mh.end():].lstrip(" :\t/")
-            cand = _limpar_candidato(depois)
+            cand = _limpar_candidato(_isolar_nome(depois))
             if cand:
                 return cand
             for j in range(idx + 1, min(idx + 6, len(linhas))):
-                cand = _limpar_candidato(linhas[j])
+                cand = _limpar_candidato(_isolar_nome(linhas[j]))
                 if cand:
                     return cand
                 if linhas[j].strip():
@@ -316,6 +320,22 @@ def _extrair_prestador(texto: str) -> Optional[str]:
                 return cand
 
     return None
+
+
+def _isolar_nome(linha: str) -> str:
+    """Numa linha como 'DERMATHO-...LTDA dermatho@hotmail.com', tira o
+    e-mail / CNPJ / CPF / telefone que aparece depois do nome. Retorna só
+    a parte do nome (que pode ter espaços internos)."""
+    if not linha:
+        return linha
+    s = linha.strip()
+    # Corta a partir do primeiro e-mail (palavra com @).
+    s = re.split(r"\s+\S*@\S+", s, maxsplit=1)[0]
+    # Corta a partir do primeiro CNPJ/CPF formatado.
+    s = re.split(r"\s+\d{2,3}[\.\-/]", s, maxsplit=1)[0]
+    # Corta a partir de telefones óbvios ((81)...).
+    s = re.split(r"\s+\(\d{2}\)", s, maxsplit=1)[0]
+    return s.strip()
 
 
 def _limpar_candidato(s: str) -> Optional[str]:
@@ -355,18 +375,23 @@ def _limpar_candidato(s: str) -> Optional[str]:
     if sum(1 for ind in indicios if ind in sl_compacto) >= 2:
         return None
 
-    # 3) Texto colado sem espaços (típico de cabeçalho/QR extraído por
-    # pdfplumber). Nomes de empresa têm pelo menos 2 palavras com espaço.
-    sem_marcas = re.sub(r"[^\w\s]", " ", s)  # tira pontuação
+    # 3) Texto colado sem espaços. Exceção: razão social com tudo colado
+    # ('DERMATHO-CLINICA...LTDA') é legítima na NFS-e nacional — aceita
+    # se terminar com sufixo societário.
+    termina_em_sufixo = bool(
+        re.search(r"(LTDA|EIRELI|MEI|ME|EPP|S/?\.?A\.?)\.?\s*$", s, re.I)
+    )
+    sem_marcas = re.sub(r"[^\w\s]", " ", s)
     palavras = sem_marcas.split()
-    if len(palavras) < 2:
+    if len(palavras) < 1:
         return None
-    # Maior palavra suspeita: mais de 22 chars seguidos = texto grudado.
-    if any(len(p) > 22 for p in palavras):
-        return None
-    # Proporção espaço/conteúdo: ao menos 1 espaço a cada ~18 chars.
-    if s.count(" ") < max(1, len(s) // 18):
-        return None
+    if not termina_em_sufixo:
+        if len(palavras) < 2:
+            return None
+        if any(len(p) > 22 for p in palavras):
+            return None
+        if s.count(" ") < max(1, len(s) // 18):
+            return None
 
     return s
 
