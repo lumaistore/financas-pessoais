@@ -323,16 +323,35 @@ def _limpar_candidato(s: str) -> Optional[str]:
     s = (s or "").strip(" \t-:|")
     if not s or len(s) < 5 or len(s) > 120:
         return None
-    # Descarta linhas que são na verdade outro rótulo / cabeçalho.
+
+    sl = s.lower()
+
+    # 1) Rótulos/cabeçalhos comuns que NÃO são nome de empresa.
     prefixos_invalidos = (
         "cnpj", "cpf", "nif", "endere", "e-mail", "telefone", "fone",
         "inscri", "tomador", "raz", "nome", "munic", "uf", "cep",
         "valor", "simples", "regime", "data", "n[uú]mero",
+        # NFS-e nacional: cabeçalhos do bloco de chave de acesso/QR.
+        "chave", "acesso", "portal", "verifica", "autenti", "c[óo]digo",
+        "discrim", "servi[çc]o", "nfs", "n[ºo°]", "p[áa]gina",
     )
-    sl = s.lower()
     for p in prefixos_invalidos:
         if re.match(p, sl):
             return None
+
+    # 2) Texto colado sem espaços (típico de cabeçalho/QR extraído por
+    # pdfplumber). Nomes de empresa têm pelo menos 2 espaços.
+    sem_marcas = re.sub(r"[^\w\s]", " ", s)  # tira pontuação
+    palavras = sem_marcas.split()
+    if len(palavras) < 2:
+        return None
+    # Maior palavra suspeita: mais de 22 chars seguidos = texto grudado.
+    if any(len(p) > 22 for p in palavras):
+        return None
+    # Proporção espaço/conteúdo: ao menos 1 espaço a cada ~18 chars.
+    if s.count(" ") < max(1, len(s) // 18):
+        return None
+
     return s
 
 
