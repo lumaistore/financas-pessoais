@@ -22,6 +22,7 @@ from services.despesas_medicas import (
     total_reembolsado,
 )
 from services.leitor_nf import ler_nf
+from services.perfil import get_perfil, lista_pacientes, paciente_padrao, salvar_perfil
 
 init_db()
 
@@ -35,6 +36,26 @@ st.info(
     "**Medicamentos comprados em farmácia NÃO são dedutíveis** — só remédios "
     "incluídos em conta de internação hospitalar."
 )
+
+# ---------------------------------------------------------------------------
+# Perfil (paciente padrão e dependentes)
+# ---------------------------------------------------------------------------
+perfil = get_perfil()
+with st.expander("👤 Meus dados (paciente padrão e dependentes)",
+                 expanded=not perfil["nome"]):
+    st.caption(
+        "Cadastre seu nome para o sistema preencher o paciente automaticamente "
+        "em toda despesa. Dependentes (separados por vírgula) aparecem como "
+        "sugestão no campo paciente."
+    )
+    pn = st.text_input("Seu nome", value=perfil["nome"], placeholder="Ex.: Lucas Gueiros…")
+    pc = st.text_input("CPF (opcional)", value=perfil["cpf"], placeholder="000.000.000-00")
+    pd_ = st.text_input("Dependentes (separados por vírgula)", value=perfil["dependentes"],
+                        placeholder="Ex.: Esposa, Filho João")
+    if st.button("Salvar meus dados"):
+        salvar_perfil(pn, pc, pd_)
+        st.success("Salvo.")
+        st.rerun()
 
 # ---------------------------------------------------------------------------
 # Filtro por ano
@@ -85,8 +106,12 @@ with st.form("nova_med", clear_on_submit=False):
         tipo_default = lido.get("tipo") if lido.get("tipo") in TIPOS else "Outros"
         tipo = st.selectbox("Tipo", TIPOS, index=TIPOS.index(tipo_default))
     with c2:
-        paciente = st.text_input("Paciente", value=lido.get("paciente") or "",
-                                 placeholder="Você mesmo ou nome do dependente")
+        paciente = st.text_input(
+            "Paciente",
+            value=lido.get("paciente") or (paciente_padrao() or ""),
+            placeholder="Você mesmo ou nome do dependente",
+            help="Você pode trocar pelo nome de um dependente. Configure os seus dados em 'Meus dados' acima.",
+        )
         prestador = st.text_input("Prestador", value=lido.get("prestador") or "",
                                   placeholder="Médico / clínica / hospital / plano")
     with c3:

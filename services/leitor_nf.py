@@ -66,6 +66,57 @@ def _parse_data_br(s: Optional[str]) -> Optional[date]:
         return None
 
 
+# Palavras-chave para inferir o "tipo" da despesa a partir do texto da NF.
+# Ordem importa: o primeiro match vence. Listei dos mais específicos para os
+# mais genéricos.
+PALAVRAS_TIPO = [
+    ("Plano de saúde", ["plano de saúde", "operadora de saúde", "convênio médico", "amil", "bradesco saúde", "unimed", "hapvida", "sulamérica saúde", "porto seguro saúde"]),
+    ("Dentista", ["odontolog", "dental", "dentário", "dentista", "ortodont", "endodont", "periodont", "implantodont"]),
+    ("Psicólogo", ["psicolog", "psicoterap"]),
+    ("Psiquiatra", ["psiquiatr"]),
+    ("Fisioterapeuta", ["fisioterap", "rpg ", "pilates clínic"]),
+    ("Fonoaudiólogo", ["fonoaudiolog", "fono "]),
+    ("Hospital / Internação", ["hospital", "internação", "internamento", "diária hospital", "pronto socorro", "ps "]),
+    ("Cirurgia", ["cirurgia", "cirurg", "procedimento cirúrg", "centro cirúrg"]),
+    ("Exame", ["exame", "laborat", "análise clínic", "radiograf", "raio-x", "raio x", "ressonância", "tomograf",
+              "ultrassom", "ultra-sonografia", "ecograf", "endoscop", "colonoscop", "mamograf", "densitometr",
+              "biópsia", "fleury", "dasa", "hermes pardini", "labi exames", "instituto de imagens", "ct ",
+              "cintilograf"]),
+    ("Aparelho ortopédico / prótese", ["prótese", "ortótese", "órtese", "aparelho ortopéd", "tipoia ", "cinta abdominal"]),
+    ("Aparelho auditivo / visual", ["aparelho auditivo", "lente de contato", "lentes de contato",
+                                     "armação", "óculos de grau", "audiometria", "fonoaudiologia auditiva"]),
+    ("Medicamento (em internação)", ["medicament", "remédio", "farmacêut"]),
+    # 'consulta médica' deixa por último para não atropelar especialidades acima
+    ("Consulta médica", ["dermatolog", "cardiolog", "ortoped", "ginecolog", "pediatr",
+                          "urolog", "neurolog", "endocrinolog", "gastroenterolog",
+                          "oftalmolog", "otorrinolaringolog", "reumatolog", "nefrolog",
+                          "alergista", "alergolog", "geriatr", "infectolog",
+                          "consulta", "atendimento médico", "clínica médica", "médic"]),
+]
+
+
+def _sem_acento(s: str) -> str:
+    import unicodedata
+
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", s or "")
+        if not unicodedata.combining(c)
+    )
+
+
+def _inferir_tipo(texto: str) -> Optional[str]:
+    """A partir do texto da NF, sugere um tipo da lista TIPOS.
+    A comparação ignora acentos (ex.: 'SAUDE' casa com 'saúde')."""
+    t = _sem_acento((texto or "").lower())
+    if not t:
+        return None
+    for tipo, chaves in PALAVRAS_TIPO:
+        for chave in chaves:
+            if _sem_acento(chave.lower()) in t:
+                return tipo
+    return None
+
+
 def _normaliza(d: dict) -> dict:
     """Garante o formato esperado pela UI (date python + float + strings)."""
     out = {
@@ -170,6 +221,11 @@ def _ler_pdf_texto(dados: bytes) -> dict:
                 out["prestador"] = cand
                 break
 
+    # Tipo: infere por palavras-chave do texto inteiro.
+    tipo = _inferir_tipo(texto)
+    if tipo:
+        out["tipo"] = tipo
+
     return out
 
 
@@ -244,19 +300,28 @@ def ler_nf(dados: bytes, nome_arquivo: str) -> dict:
         local = _ler_pdf_texto(dados)
         # Se conseguiu ao menos valor + data, ótimo.
         if local.get("valor_pago") and local.get("data"):
-            return _normaliza(local)
+            return _normaliza_com_fallback(local)
         # Senão, tenta com IA (PDF escaneado).
         ia = _ler_com_ia(dados, "application/pdf")
         if ia:
             # Combina: prioriza o que veio da IA, mantém o que veio do local.
             combinado = {**local, **{k: v for k, v in ia.items() if v}}
-            return _normaliza(combinado)
-        return _normaliza(local)
+            return _normaliza_com_fallback(combinado)
+        return _normaliza_com_fallback(local)
 
     if eh_imagem:
         ext = nome_lower.rsplit(".", 1)[-1]
         mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}[ext]
         ia = _ler_com_ia(dados, mime)
-        return _normaliza(ia)
+        return _normaliza_com_fallback(ia)
 
     return _normaliza({})
+
+
+def _normaliza_com_fallback(d: dict) -> dict:
+    """Como _normaliza, mas se 'tipo' veio vazio, tenta inferir pelo nome do
+    prestador (caso a IA tenha pegado o prestador mas não o tipo)."""
+    out = _normaliza(d)
+    if not out.get("tipo") and out.get("prestador"):
+        out["tipo"] = _inferir_tipo(out["prestador"])
+    return out

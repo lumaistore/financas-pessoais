@@ -240,6 +240,18 @@ class DespesaMedica(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
+class PerfilUsuario(Base):
+    """Dados do usuário reutilizados em formulários (paciente padrão, etc.)."""
+
+    __tablename__ = "perfil_usuario"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nome: Mapped[Optional[str]] = mapped_column(String)
+    cpf: Mapped[Optional[str]] = mapped_column(String)
+    # Lista de dependentes (separados por vírgula), para sugerir em pacientes.
+    dependentes: Mapped[Optional[str]] = mapped_column(String)
+
+
 class RetiradaLucroConfig(Base):
     """Dados fixos do recibo de distribuição de lucros (singleton)."""
 
