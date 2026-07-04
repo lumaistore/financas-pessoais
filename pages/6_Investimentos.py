@@ -30,6 +30,13 @@ from services.investimentos import (
 )
 from services.cotacoes import atualizar_cotacoes, buscar_dolar, evolucao_intradiaria, ganho_perda
 from services.aportes import excluir_compra, listar_compras, registrar_compra, total_aportes_mes
+from services.proventos import (
+    excluir_provento,
+    ler_imagens,
+    listar_proventos,
+    registrar_proventos,
+    total_proventos_mes,
+)
 
 INDEXADORES = ["", "CDI", "PREFIXADO", "IPCA"]
 
@@ -133,6 +140,107 @@ if _compras:
             st.rerun()
 else:
     st.info("Nenhuma compra registrada ainda. Use o formulário acima.")
+
+st.divider()
+
+# ---------------------------------------------------------------------------
+# 💰 Proventos / Dividendos — upload de prints lidos por IA
+# ---------------------------------------------------------------------------
+st.subheader("💰 Proventos / Dividendos")
+st.caption(
+    "Suba os **prints** dos proventos da corretora (dividendos, JCP, "
+    "rendimentos de FII, amortização). A IA lê **ticker, tipo, valor e data** "
+    "de cada um — você confere e salva."
+)
+
+with st.expander("📤 Enviar prints e ler com IA", expanded=False):
+    up1, up2 = st.columns([3, 1])
+    with up1:
+        imgs = st.file_uploader(
+            "Prints dos proventos (pode selecionar vários)",
+            type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True,
+            key="prov_uploader",
+        )
+    with up2:
+        ano_prov = st.number_input("Ano", min_value=2000, max_value=2100,
+                                    value=date.today().year, step=1)
+    if imgs and st.button("🔍 Ler proventos das imagens", type="primary"):
+        arquivos = []
+        for f in imgs:
+            ext = f.name.lower().rsplit(".", 1)[-1]
+            mime = {"png": "image/png", "jpg": "image/jpeg",
+                    "jpeg": "image/jpeg", "webp": "image/webp"}.get(ext, "image/png")
+            arquivos.append((f.getvalue(), mime))
+        with st.spinner(f"Lendo {len(arquivos)} imagem(ns) com IA..."):
+            lidos = ler_imagens(arquivos, int(ano_prov))
+        if not lidos:
+            st.warning("Não consegui extrair proventos (verifique a chave da API ou a nitidez das imagens).")
+        else:
+            st.session_state["prov_lidos"] = lidos
+            st.success(f"{len(lidos)} provento(s) lido(s). Confira abaixo e salve.")
+
+    # Revisão dos proventos lidos (editável)
+    if st.session_state.get("prov_lidos"):
+        st.markdown("**Confira antes de salvar** (edite/remova o que precisar):")
+        df_prov = pd.DataFrame(st.session_state["prov_lidos"])
+        edit_prov = st.data_editor(
+            df_prov, num_rows="dynamic", use_container_width=True, hide_index=True,
+            key="prov_editor",
+            column_config={
+                "data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+                "ticker": st.column_config.TextColumn("Ticker"),
+                "tipo": st.column_config.SelectboxColumn(
+                    "Tipo", options=["dividendo", "jcp", "rendimento", "amortizacao", "outro"]),
+                "valor": st.column_config.NumberColumn("Valor (R$)", format="%.2f", min_value=0.0),
+            },
+        )
+        _soma = float(edit_prov["valor"].fillna(0).sum()) if not edit_prov.empty else 0.0
+        st.caption(f"Total a salvar: **R\\$ {_soma:,.2f}** em {len(edit_prov)} provento(s).")
+        if st.button("💾 Salvar proventos", type="primary"):
+            itens = []
+            for _, r in edit_prov.iterrows():
+                d = r.get("data")
+                if isinstance(d, pd.Timestamp):
+                    d = d.date()
+                v = r.get("valor")
+                tk = str(r.get("ticker") or "").strip().upper()
+                if d and tk and pd.notna(v) and float(v) > 0:
+                    itens.append({"data": d, "ticker": tk,
+                                  "tipo": str(r.get("tipo") or "dividendo"),
+                                  "valor": float(v)})
+            n = registrar_proventos(itens)
+            st.session_state.pop("prov_lidos", None)
+            st.success(f"{n} provento(s) salvo(s) (duplicatas ignoradas).")
+            st.rerun()
+
+# Histórico de proventos
+_proventos = listar_proventos()
+if _proventos:
+    dfp = pd.DataFrame(_proventos)
+    dfp["data"] = dfp["data"].apply(lambda d: d.strftime("%d/%m/%Y"))
+    dfp_show = dfp[["data", "ticker", "tipo", "valor"]].copy()
+    dfp_show["valor"] = dfp_show["valor"].apply(lambda v: f"R$ {v:,.2f}")
+    dfp_show.columns = ["Data", "Ticker", "Tipo", "Valor"]
+    st.dataframe(dfp_show, use_container_width=True, hide_index=True)
+
+    tot_mes: dict = {}
+    for p in _proventos:
+        tot_mes[p["mes_referencia"]] = tot_mes.get(p["mes_referencia"], 0.0) + p["valor"]
+    resumo = " · ".join(f"{m}: R\\$ {v:,.2f}" for m, v in sorted(tot_mes.items(), reverse=True)[:6])
+    st.caption(f"💰 Proventos por mês — {resumo}")
+
+    op_prov = {f"{p['data'].strftime('%d/%m/%Y')} · {p['ticker']} · R$ {p['valor']:,.2f}": p["id"]
+               for p in _proventos}
+    epc1, epc2 = st.columns([3, 1])
+    with epc1:
+        sel_prov = st.selectbox("Excluir provento", ["(nenhum)"] + list(op_prov.keys()))
+    with epc2:
+        st.write("")
+        if st.button("🗑️ Excluir", key="del_prov", disabled=sel_prov == "(nenhum)"):
+            excluir_provento(op_prov[sel_prov])
+            st.rerun()
+else:
+    st.info("Nenhum provento registrado ainda. Envie os prints acima.")
 
 st.divider()
 

@@ -426,3 +426,19 @@ class AlertaInteligente(Base):
     descricao: Mapped[Optional[str]] = mapped_column(String)
     prioridade: Mapped[int] = mapped_column(Integer, default=2)
     criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class Provento(Base):
+    """Provento recebido (dividendo / JCP / rendimento de FII / amortização),
+    normalmente lido de um print do app da corretora via IA de visão."""
+
+    __tablename__ = "proventos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[date] = mapped_column(Date, nullable=False)
+    ticker: Mapped[str] = mapped_column(String, nullable=False)
+    tipo: Mapped[str] = mapped_column(String, default="dividendo")  # dividendo/jcp/rendimento/amortizacao
+    valor: Mapped[float] = mapped_column(Float, nullable=False)
+    observacao: Mapped[Optional[str]] = mapped_column(String)
+    movimentacao_id: Mapped[Optional[int]] = mapped_column(Integer)
+    criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

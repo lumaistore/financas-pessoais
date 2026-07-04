@@ -235,24 +235,28 @@ def gastos_categoria_pivot() -> Dict:
 
 @cache_leitura
 def dividendos_mes(mes_ref: str) -> float:
-    """Aproximação: soma resgates + receitas que contenham palavras-chave
-    típicas de proventos."""
+    """Proventos do mês. Usa a tabela de Proventos (lida dos prints da
+    corretora). Se ainda não houver, cai no heurístico por palavra-chave."""
+    from services.proventos import total_proventos_mes
+
+    total = total_proventos_mes(mes_ref)
+    if total > 0:
+        return total
+
+    # Fallback: soma resgates + receitas com termos de provento (dados antigos).
     import re
-    padrao = re.compile(
-        r"(divid|jcp|juros\s+sobre\s+capital|rendim|provent|dpv)",
-        re.I,
-    )
+    padrao = re.compile(r"(divid|jcp|juros\s+sobre\s+capital|rendim|provent|dpv)", re.I)
     with get_session() as s:
         movs = s.scalars(
             select(Movimentacao).where(Movimentacao.mes_referencia == mes_ref)
         ).all()
-        total = 0.0
+        soma = 0.0
         for m in movs:
             if m.tipo == "resgate":
-                total += m.valor
+                soma += m.valor
             elif m.tipo == "receita" and m.descricao and padrao.search(m.descricao):
-                total += m.valor
-        return total
+                soma += m.valor
+        return soma
 
 
 # ---------------------------------------------------------------------------
