@@ -36,6 +36,7 @@ from services.painel import (
     fluxo_com_delta,
     fluxo_por_conta,
     gastos_categoria_pivot,
+    media_gasto_meses,
     top_despesas,
 )
 
@@ -152,9 +153,20 @@ with c3:
 
 c4, c5 = st.columns(2)
 with c4:
-    d, t = _delta_pill(f["sobra_delta"], higher_good=True)
-    cor = COR["sucesso"] if f["sobra"] >= 0 else COR["perigo"]
-    kpi("Sobra do mês", _brl(f["sobra"]), d, t, icone="💰", cor_valor=cor)
+    mg = media_gasto_meses(mes_ref, n=3)
+    if mg["meses_usados"]:
+        vs = mg["atual_vs_media_pct"]
+        if vs is None:
+            pill_txt, pill_tom = f"base: {len(mg['meses_usados'])} mês(es)", "neutro"
+        elif vs > 5:
+            pill_txt, pill_tom = f"↑ {abs(vs):.0f}% acima da média", "perigo"
+        elif vs < -5:
+            pill_txt, pill_tom = f"↓ {abs(vs):.0f}% abaixo da média", "sucesso"
+        else:
+            pill_txt, pill_tom = "em linha com a média", "neutro"
+        kpi("Média de gasto (3m)", _brl(mg["media"]), pill_txt, pill_tom, icone="📉")
+    else:
+        kpi("Média de gasto (3m)", "—", "sem histórico ainda", "neutro", icone="📉")
 with c5:
     d, t = _delta_pill(f["taxa_poupanca_delta"], higher_good=True)
     meta = "meta 20%+" if f["taxa_poupanca"] >= 20 else "abaixo da meta"

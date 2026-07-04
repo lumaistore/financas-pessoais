@@ -160,6 +160,45 @@ def variacao_por_categoria(mes_ref: str) -> List[Dict]:
 # Dividendos / rendimentos recebidos no mês
 # ---------------------------------------------------------------------------
 @cache_leitura
+def media_gasto_meses(mes_ref: str, n: int = 3) -> Dict:
+    """Média do gasto real (despesas + cartão, excl. LUMAI) dos `n` meses
+    ANTERIORES ao mês de referência. Ignora o mês corrente/parcial.
+
+    Retorna {'media': float, 'meses_usados': [AAAA-MM], 'atual_vs_media_pct': float|None}.
+    """
+    from services.movimentacoes import total_por_tipo
+
+    def _gasto_mes(m: str) -> float:
+        # Fonte única: movimentações (já incluem o cartão após o sync).
+        # Não somar gasto_total do cartão aqui — isso duplicaria o valor.
+        return total_por_tipo(m, "despesa", excluir_lumai=True)
+
+    # Coleta os n meses anteriores ao mes_ref.
+    meses = []
+    cursor = mes_ref
+    for _ in range(n):
+        cursor = mes_anterior(cursor)
+        meses.append(cursor)
+    meses = sorted(meses)  # crescente
+
+    valores = [_gasto_mes(m) for m in meses]
+    # Só conta meses que tiveram algum gasto (evita puxar a média pra baixo com
+    # meses vazios sem dados).
+    com_gasto = [(m, v) for m, v in zip(meses, valores) if v > 0]
+    if not com_gasto:
+        return {"media": 0.0, "meses_usados": [], "atual_vs_media_pct": None}
+
+    media = sum(v for _, v in com_gasto) / len(com_gasto)
+    atual = _gasto_mes(mes_ref)
+    vs = ((atual - media) / media * 100) if media else None
+    return {
+        "media": media,
+        "meses_usados": [m for m, _ in com_gasto],
+        "atual_vs_media_pct": vs,
+    }
+
+
+@cache_leitura
 def gastos_categoria_pivot() -> Dict:
     """Gasto por categoria em CADA mês com dados (para tabela mês a mês).
 
