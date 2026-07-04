@@ -264,6 +264,21 @@ class DespesaMedica(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
+class ConsultaAssessor(Base):
+    """Sessão de conversa com o 'assessor de investimentos' (IA). Guarda o
+    valor consultado, o snapshot da carteira e a conversa completa em JSON
+    (perguntas + respostas) para retomar depois."""
+
+    __tablename__ = "consultas_assessor"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    valor_investir: Mapped[Optional[float]] = mapped_column(Float)
+    contexto_carteira: Mapped[Optional[str]] = mapped_column(String)
+    conversa_json: Mapped[Optional[str]] = mapped_column(String)  # lista de {role, content}
+    titulo: Mapped[Optional[str]] = mapped_column(String)  # resumo curto
+
+
 class Exame(Base):
     """Resultado de exame médico anexado pelo usuário (PDF) com texto
     extraído para busca e análise educativa por IA. NÃO substitui consulta
