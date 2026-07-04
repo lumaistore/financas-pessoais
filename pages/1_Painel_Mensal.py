@@ -74,7 +74,8 @@ def _rotulo_curto(mes_str: str) -> str:
 
 hoje = date.today()
 padrao = hoje.strftime("%Y-%m")
-disponiveis = set(meses_disponiveis()) | {padrao}
+com_dados = meses_disponiveis()  # já vem do mais recente ao mais antigo
+disponiveis = set(com_dados) | {padrao}
 for i in range(24):
     m = hoje.month - i
     y = hoje.year
@@ -85,7 +86,12 @@ for i in range(24):
 meses_lista = sorted(disponiveis, reverse=True)
 
 if "painel_mes" not in st.session_state:
-    st.session_state["painel_mes"] = padrao if padrao in meses_lista else meses_lista[0]
+    # Abre no mês corrente se ele já tiver dados; senão, no último mês com
+    # dados (ex.: julho vazio → abre em junho). O usuário ainda pode navegar.
+    if padrao in com_dados or not com_dados:
+        st.session_state["painel_mes"] = padrao if padrao in meses_lista else meses_lista[0]
+    else:
+        st.session_state["painel_mes"] = com_dados[0]
 
 col_a, col_b, col_c = st.columns([1, 4, 1])
 idx = meses_lista.index(st.session_state["painel_mes"]) if st.session_state["painel_mes"] in meses_lista else 0

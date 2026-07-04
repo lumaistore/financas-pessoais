@@ -105,7 +105,8 @@ def _rotulo(mes_str: str) -> str:
 
 hoje = date.today()
 padrao = hoje.strftime("%Y-%m")
-disponiveis = set(meses_disponiveis()) | {padrao}
+com_dados = meses_disponiveis()  # do mais recente ao mais antigo
+disponiveis = set(com_dados) | {padrao}
 for i in range(24):
     m = hoje.month - i
     y = hoje.year
@@ -116,7 +117,11 @@ for i in range(24):
 meses_lista = sorted(disponiveis, reverse=True)
 
 if "mov_mes" not in st.session_state:
-    st.session_state["mov_mes"] = padrao if padrao in meses_lista else meses_lista[0]
+    # Abre no mês corrente se tiver dados; senão, no último mês com dados.
+    if padrao in com_dados or not com_dados:
+        st.session_state["mov_mes"] = padrao if padrao in meses_lista else meses_lista[0]
+    else:
+        st.session_state["mov_mes"] = com_dados[0]
 
 col_a, col_b, col_c = st.columns([1, 4, 1])
 idx_atual = meses_lista.index(st.session_state["mov_mes"]) if st.session_state["mov_mes"] in meses_lista else 0

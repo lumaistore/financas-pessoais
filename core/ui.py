@@ -272,15 +272,17 @@ def kpi(label: str, valor: str, delta: str = "", delta_tom: str = "neutro",
     cor = cor_valor or COR["texto"]
     if hover:
         titulo = hover.replace('"', "'")
-        extra_attr = f' title="{titulo}" style="cursor:help;"'
+        extra_attr = f' title="{titulo}"'
+        cursor = "cursor:help;"
         dica = (f'<span style="color:{COR["texto_3"]};font-size:11px;'
                 f'margin-left:4px">ⓘ</span>')
     else:
         extra_attr = ""
+        cursor = ""
         dica = ""
     st.markdown(
         f"""
-        <div{extra_attr} class="fin-kpi" style="background:{COR['superficie']};
+        <div{extra_attr} class="fin-kpi" style="{cursor}background:{COR['superficie']};
                     border:0.5px solid {COR['borda']};
                     border-radius:14px;padding:15px 17px;min-height:112px">
           <div style="display:flex;align-items:center;gap:5px;color:{COR['texto_3']};
