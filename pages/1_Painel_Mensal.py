@@ -35,6 +35,7 @@ from services.movimentacoes import (
     listar,
     meses_disponiveis,
     por_categoria,
+    por_fonte,
 )
 from services.painel import (
     alertas,
@@ -157,7 +158,10 @@ f = fluxo_com_delta(mes_ref)
 c1, c2, c3 = st.columns(3)
 with c1:
     d, t = _delta_pill(f["receitas_delta"], higher_good=True)
-    kpi("Recebido", _brl(f["receitas"]), d, t, icone="💵")
+    _fontes_rec = por_fonte(mes_ref, tipo="receita")
+    hover_rec = ("&#10;".join(f"{x['fonte']}: {_brl(x['total'])}" for x in _fontes_rec[:12])
+                 or "Sem receitas neste mês")
+    kpi("Recebido", _brl(f["receitas"]), d, t, icone="💵", hover=hover_rec)
 with c2:
     d, t = _delta_pill(f["gasto_delta"], higher_good=False)
     _cats_mes = por_categoria(mes_ref, tipo="despesa", excluir_lumai=True)
@@ -169,7 +173,10 @@ with c2:
     kpi("Gasto real", _brl(f["gasto_real"]), d, t, icone="💸", hover=hover_gasto)
 with c3:
     d, t = _delta_pill(f["aplicacoes_delta"], higher_good=True)
-    kpi("Aplicado", _brl(f["aplicacoes"]), d, t, icone="📈")
+    _fontes_ap = por_fonte(mes_ref, tipo="aplicacao")
+    hover_ap = ("&#10;".join(f"{x['fonte']}: {_brl(x['total'])}" for x in _fontes_ap[:12])
+                or "Nenhuma aplicação registrada neste mês")
+    kpi("Aplicado", _brl(f["aplicacoes"]), d, t, icone="📈", hover=hover_ap)
 
 c4, c5 = st.columns(2)
 with c4:
@@ -197,7 +204,15 @@ with c5:
     d, t = _delta_pill(f["taxa_poupanca_delta"], higher_good=True)
     meta = "meta 20%+" if f["taxa_poupanca"] >= 20 else "abaixo da meta"
     tom_meta = "sucesso" if f["taxa_poupanca"] >= 20 else "aviso"
-    kpi("Taxa de poupança", f"{f['taxa_poupanca']:.0f}%", meta, tom_meta, icone="📊")
+    _sobra = f["receitas"] - f["gasto_real"] - f["parcelas"] - f["aplicacoes"] + f["resgates"]
+    hover_taxa = (
+        "Quanto do que você RECEBEU acabou guardado/investido em vez de gasto.&#10;"
+        f"Fórmula: (Aplicado + Sobra) ÷ Recebido&#10;"
+        f"= ({_brl(f['aplicacoes'])} + {_brl(_sobra)}) ÷ {_brl(f['receitas'])}&#10;"
+        "Meta saudável: 20% ou mais."
+    )
+    kpi("Taxa de poupança", f"{f['taxa_poupanca']:.0f}%", meta, tom_meta,
+        icone="📊", hover=hover_taxa)
 
 # Auditoria editável das movimentações do mês (conferir/editar/remover/adicionar)
 with st.expander(f"🔍 Auditar movimentações de {_rotulo(mes_ref)} (editar, remover, adicionar)"):

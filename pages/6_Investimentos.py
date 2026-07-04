@@ -185,7 +185,16 @@ with st.expander("➕ Adicionar aplicação", expanded=not listar_datas()):
             nova_taxa = st.number_input("% do índice", min_value=0.0, step=1.0, format="%.1f", value=0.0,
                                         help="Ex.: 102 para 102% do CDI.")
         with rf3:
-            nova_aplicacao = st.date_input("Data de aplicação", value=None, format="DD/MM/YYYY")
+            nova_aplicacao = st.date_input(
+                "Data da compra/aplicação", value=date.today(), format="DD/MM/YYYY",
+                help="Data em que o dinheiro entrou no investimento. Usada para contar "
+                     "no 'Aplicado' do mês (e, se renda fixa, no cálculo do CDI).",
+            )
+        contar_aplic = st.checkbox(
+            "📅 Contar como aplicação do mês (dinheiro novo)", value=True,
+            help="Cria uma movimentação de aplicação nessa data — aparece no 'Aplicado' "
+                 "do Painel. Desmarque se estiver só ajustando uma posição existente.",
+        )
 
         enviar_aplic = st.form_submit_button("Adicionar aplicação", type="primary")
         if enviar_aplic:
@@ -240,6 +249,19 @@ with st.expander("➕ Adicionar aplicação", expanded=not listar_datas()):
                 d = adicionar_posicao(linha)
                 for m in mensagens:
                     st.info(m)
+                # Também registra como aplicação do mês (histórico + movimentação),
+                # sem re-somar à carteira (o snapshot já foi atualizado acima).
+                if contar_aplic and (valor_pago or vm):
+                    _valor_ap = float(valor_pago or vm)
+                    _dt_ap = nova_aplicacao or date.today()
+                    registrar_compra(
+                        data_=_dt_ap, ativo=novo_ativo.strip(), valor_total=_valor_ap,
+                        ticker=novo_ticker.strip().upper() or None, classe=nova_classe,
+                        quantidade=nova_qtd or None, preco_unitario=novo_preco or None,
+                        moeda=nova_moeda, somar_carteira=False,
+                    )
+                    st.info(f"📅 Aplicação de R\\$ {_valor_ap:,.2f} lançada em {_dt_ap.strftime('%m/%Y')} "
+                            f"(aparece no 'Aplicado' do Painel).")
                 st.success(f"'{novo_ativo.strip()}' adicionado ao snapshot de {d.strftime('%d/%m/%Y')}.")
                 st.rerun()
 
