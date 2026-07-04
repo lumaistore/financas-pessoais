@@ -304,16 +304,23 @@ with st.container(border=True):
             registros.append(reg)
         df_p = pd.DataFrame(registros)
 
-        # Variação entre os dois últimos meses COMPLETOS (ignora o mês corrente,
-        # que ainda está em andamento).
+        # Variação PERCENTUAL entre os dois últimos meses COMPLETOS
+        # (ignora o mês corrente, que ainda está em andamento).
+        def _fmt_pct(ant_v: float, ult_v: float) -> str:
+            if ant_v == 0:
+                return "novo" if ult_v > 0 else "—"
+            pct = (ult_v - ant_v) / ant_v * 100
+            seta = "↑" if pct > 0 else ("↓" if pct < 0 else "=")
+            return f"{seta} {abs(pct):.0f}%"
+
         mes_corrente = date.today().strftime("%Y-%m")
         completos = [m for m in meses_p if m != mes_corrente]
         col_var = None
         if len(completos) >= 2:
             ant, ult = completos[-2], completos[-1]
-            col_var = f"Δ {_rotulo_curto(ant)}→{_rotulo_curto(ult)}"
+            col_var = f"Δ% {_rotulo_curto(ant)}→{_rotulo_curto(ult)}"
             df_p[col_var] = [
-                ln["por_mes"].get(ult, 0.0) - ln["por_mes"].get(ant, 0.0)
+                _fmt_pct(ln["por_mes"].get(ant, 0.0), ln["por_mes"].get(ult, 0.0))
                 for ln in pivot["linhas"]
             ]
 
@@ -322,23 +329,22 @@ with st.container(border=True):
         for m in meses_p:
             totais[_rotulo_curto(m)] = sum(ln["por_mes"].get(m, 0.0) for ln in pivot["linhas"])
         if col_var:
-            totais[col_var] = df_p[col_var].sum()
+            soma_ant = sum(ln["por_mes"].get(ant, 0.0) for ln in pivot["linhas"])
+            soma_ult = sum(ln["por_mes"].get(ult, 0.0) for ln in pivot["linhas"])
+            totais[col_var] = _fmt_pct(soma_ant, soma_ult)
         df_p = pd.concat([df_p, pd.DataFrame([totais])], ignore_index=True)
 
-        # Formatação em R$ (colunas de mês) e variação com seta.
+        # Formatação em R$ (só as colunas de mês; a variação já é texto).
         for m in meses_p:
             lbl = _rotulo_curto(m)
             df_p[lbl] = df_p[lbl].apply(lambda v: f"R$ {v:,.2f}")
-        if col_var:
-            df_p[col_var] = df_p[col_var].apply(
-                lambda v: f"{'↑' if v > 0 else '↓' if v < 0 else '='} R$ {abs(v):,.2f}"
-            )
 
         st.dataframe(df_p, use_container_width=True, hide_index=True)
         if col_var:
             st.caption(
-                f"Variação entre os dois últimos meses completos "
+                f"Variação percentual entre os dois últimos meses completos "
                 f"({_rotulo(completos[-2])} → {_rotulo(completos[-1])}). "
+                f"'novo' = categoria sem gasto no mês anterior. "
                 f"O mês corrente ({_rotulo(mes_corrente)}) está em andamento e "
                 f"fica de fora da comparação."
             )
