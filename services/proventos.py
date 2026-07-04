@@ -23,12 +23,19 @@ MODELO_IA = "claude-sonnet-4-5-20250929"
 
 _PROMPT_SISTEMA = (
     "Você lê extratos de PROVENTOS de investimentos (apps de corretora, ex.: "
-    "BTG) em português do Brasil. Extraia SOMENTE lançamentos que são proventos "
-    "recebidos: Dividendos, Juros sobre Capital Próprio (JCP), Rendimentos de "
-    "FII, e Amortização de FII/FIP. "
-    "IGNORE completamente: 'Aquisição de Cotas' (aplicação), 'Resgate de Cotas', "
-    "taxas ('Taxa de Carteira', 'Liq Bolsa taxa'), estornos, cashback, "
-    "'Conta Remunerada'. Não invente nada."
+    "BTG, Avenue) em português do Brasil. Extraia SOMENTE lançamentos cujo texto "
+    "começa/contém explicitamente uma destas palavras: 'Dividendos', "
+    "'Juros S/ Capital' (ou 'Juros sobre Capital'/JCP), 'Rendimentos' (de FII), "
+    "'Amortizacao'/'Amortização'. Cada provento tem um TICKER associado no mesmo "
+    "texto (ex.: CMIG4, BBAS3, HGCR11, XLU).\n\n"
+    "IGNORE ABSOLUTAMENTE (nunca vire provento, nem associe o valor a um ticker):\n"
+    "- 'Aquisicao De Cotas No Fundo' / 'Aquisição de Cotas' (é APLICAÇÃO)\n"
+    "- 'Resgate de Cotas' / 'Resgate'\n"
+    "- 'Taxa de Carteira', 'Liq Bolsa (taxa...)', qualquer 'Taxa'\n"
+    "- 'Imposto' isolado (some ao campo imposto do provento do mesmo ativo)\n"
+    "- estornos, cashback, 'Conta Remunerada', 'Cashback'\n"
+    "- QUALQUER valor negativo (com sinal '-') — proventos são positivos.\n\n"
+    "Na dúvida se uma linha é provento, NÃO inclua. Não invente nada."
 )
 
 

@@ -254,8 +254,8 @@ if _proventos:
     tot_mes: dict = {}
     for p in _proventos:
         tot_mes[p["mes_referencia"]] = tot_mes.get(p["mes_referencia"], 0.0) + p["valor_brl"]
-    resumo = " · ".join(f"{m}: R\\$ {v:,.2f}" for m, v in sorted(tot_mes.items(), reverse=True)[:6])
-    st.caption(f"💰 Proventos por mês (em R$) — {resumo}")
+    resumo = " · ".join(f"{m}: R$ {v:,.2f}" for m, v in sorted(tot_mes.items(), reverse=True)[:6])
+    st.caption(("💰 Proventos por mês (em reais) — " + resumo).replace("$", "\\$"))
 
     op_prov = {f"{p['data'].strftime('%d/%m/%Y')} · {p['ticker']} · R$ {p['valor_brl']:,.2f}": p["id"]
                for p in _proventos}
