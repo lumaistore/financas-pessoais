@@ -35,6 +35,35 @@ st.caption(
 )
 
 # ---------------------------------------------------------------------------
+# Sincronização (uma vez): puxa faturas de cartão + tabelas antigas
+# ---------------------------------------------------------------------------
+with st.expander("🔄 Sincronizar dados existentes (cartão + dados antigos)"):
+    st.write(
+        "Cria movimentações a partir do que já está no banco: "
+        "**transações de cartão** (das faturas importadas), **receitas** e "
+        "**despesas manuais** de antes da reforma. É seguro clicar mais de "
+        "uma vez — o sistema detecta duplicatas por (data + valor + descrição) "
+        "e não recria."
+    )
+    st.warning(
+        "⚠️ Depois de sincronizar, você pode ter **conflito** entre "
+        "'Fatura Paga do Cartão' no extrato e as transações do cartão em si — "
+        "escolha **um** dos dois na hora de manter (senão duplica o gasto)."
+    )
+    if st.button("🔄 Sincronizar agora"):
+        from services.sincronizar import sincronizar_tudo
+        with st.spinner("Sincronizando..."):
+            resultado = sincronizar_tudo()
+        total = sum(resultado.values())
+        if total == 0:
+            st.info("Nada novo para sincronizar (tudo já está migrado).")
+        else:
+            partes = [f"**{v}** de {k}" for k, v in resultado.items() if v > 0]
+            st.success("✅ " + str(total) + " movimentação(ões) criadas: " + ", ".join(partes) + ".")
+        st.rerun()
+
+
+# ---------------------------------------------------------------------------
 # Seletor de mês fácil (dropdown com meses existentes + navegação)
 # ---------------------------------------------------------------------------
 MESES_PT = {
