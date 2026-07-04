@@ -334,50 +334,69 @@ with st.expander(f"🔍 Auditar movimentações de {_rotulo(mes_ref)} (editar, r
 # ═══════════════════════════════════════════════════════════════════════
 # SEÇÃO 2 — 📊 Waterfall do Fluxo
 # ═══════════════════════════════════════════════════════════════════════
-st.markdown("### 📊 Fluxo do mês em cascata")
+st.markdown("### 📊 Entradas e saídas do mês")
 with st.container(border=True):
     import plotly.graph_objects as go
 
-    # Monta os passos, escondendo os intermediários zerados (menos poluição).
-    passos = [("Recebido", f["receitas"], "absolute")]
-    for nome, val in [("Gastos", -f["gasto_real"]), ("Parcelas", -f["parcelas"]),
-                      ("Aplicações", -f["aplicacoes"]), ("Resgates", f["resgates"])]:
-        if abs(val) > 0.005:
-            passos.append((nome, val, "relative"))
-    passos.append(("Sobra", f["sobra"], "total"))
+    # Barras horizontais simples — tudo positivo, fácil de comparar.
+    itens = [
+        ("Recebido", f["receitas"], COR["sucesso"]),
+        ("Gastos", f["gasto_real"], COR["perigo"]),
+    ]
+    if f["aplicacoes"] > 0.005:
+        itens.append(("Aplicações", f["aplicacoes"], COR["primaria"]))
+    if f["parcelas"] > 0.005:
+        itens.append(("Parcelas", f["parcelas"], COR["aviso"]))
+    if f["resgates"] > 0.005:
+        itens.append(("Resgates", f["resgates"], COR["sucesso"]))
 
-    rotulos = [p[0] for p in passos]
-    valores = [p[1] for p in passos]
-    medidas = [p[2] for p in passos]
+    if f["receitas"] <= 0.005 and f["gasto_real"] <= 0.005:
+        st.caption("Sem entradas ou saídas registradas neste mês.")
+    else:
+        # Ordena da maior para a menor barra (Recebido tende a ficar no topo).
+        itens.sort(key=lambda x: x[1])  # asc → maior em cima no eixo horizontal
+        rotulos = [i[0] for i in itens]
+        valores = [i[1] for i in itens]
+        cores = [i[2] for i in itens]
 
-    wf = go.Figure(go.Waterfall(
-        orientation="v",
-        measure=medidas,
-        x=rotulos,
-        y=valores,
-        text=[_brl(abs(v)) for v in valores],
-        textposition="outside",
-        cliponaxis=False,
-        connector={"line": {"color": COR["borda_forte"], "width": 1}},
-        increasing={"marker": {"color": COR["sucesso"]}},   # verde
-        decreasing={"marker": {"color": COR["perigo"]}},    # vermelho
-        totals={"marker": {"color": COR["primaria"]}},      # índigo
-        hovertemplate="%{x}: R$ %{y:,.2f}<extra></extra>",
-    ))
-    wf.update_layout(
-        height=360, showlegend=False,
-        margin=dict(l=10, r=10, t=30, b=10),
-        template="simple_white",
-        yaxis=dict(title="", showgrid=True, gridcolor=COR["borda"],
-                   tickprefix="R$ ", zeroline=True, zerolinecolor=COR["borda_forte"]),
-        xaxis=dict(title=""),
-        font=dict(family="Inter, sans-serif", size=13),
-    )
-    st.plotly_chart(wf, use_container_width=True)
-    st.caption(
-        "Da esquerda para a direita: o que **entrou** (verde), o que **saiu** "
-        "(vermelho) e o que **sobrou** no mês (índigo)."
-    )
+        fig = go.Figure(go.Bar(
+            x=valores, y=rotulos, orientation="h",
+            marker=dict(color=cores, line=dict(width=0)),
+            text=[_brl(v) for v in valores],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{y}: R$ %{x:,.2f}<extra></extra>",
+        ))
+        fig.update_layout(
+            height=90 + 60 * len(itens),
+            margin=dict(l=10, r=80, t=10, b=10),
+            template="simple_white",
+            showlegend=False,
+            xaxis=dict(title="", tickprefix="R$ ", showgrid=True,
+                       gridcolor=COR["borda"], zeroline=False),
+            yaxis=dict(title="", tickfont=dict(size=14)),
+            font=dict(family="Inter, sans-serif", size=13),
+            bargap=0.35,
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+        # Resumo textual (sem "sobra negativa" confusa).
+        destinado = f["gasto_real"] + f["aplicacoes"] + f["parcelas"]
+        if destinado > f["receitas"] + 0.005:
+            extra = destinado - f["receitas"]
+            st.caption(
+                f"💡 Você **recebeu** {_brl(f['receitas'])} e **destinou** "
+                f"{_brl(destinado)} (gastos + aplicações). Os {_brl(extra)} a mais "
+                f"vieram de **reserva/saldo** — comum em meses de aporte forte."
+                .replace("$", "\\$")
+            )
+        else:
+            sobrou = f["receitas"] - destinado
+            st.caption(
+                f"💡 Você **recebeu** {_brl(f['receitas'])}, **destinou** "
+                f"{_brl(destinado)} e **ficou com** {_brl(sobrou)} livre no mês."
+                .replace("$", "\\$")
+            )
 
 # ═══════════════════════════════════════════════════════════════════════
 # SEÇÃO 3 — 💰 Onde está seu dinheiro (Patrimônio)
