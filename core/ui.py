@@ -234,11 +234,13 @@ def cabecalho_pagina(titulo: str, subtitulo: str = "", icone: str = "") -> None:
            if subtitulo else "")
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;
+                    padding-top:4px">
           {ico}
           <div>
             <div style="font-size:26px;font-weight:600;letter-spacing:-0.025em;
-                        color:{COR['texto']};line-height:1.1">{titulo}</div>
+                        color:{COR['texto']};line-height:1.35;
+                        padding-top:2px">{titulo}</div>
             {sub}
           </div>
         </div>
@@ -272,7 +274,7 @@ def kpi(label: str, valor: str, delta: str = "", delta_tom: str = "neutro",
           <div style="display:flex;align-items:center;gap:5px;color:{COR['texto_3']};
                       font-size:12.5px;font-weight:500;margin-bottom:8px">{ico}{label}</div>
           <div style="font-size:25px;font-weight:600;letter-spacing:-0.03em;
-                      color:{cor};line-height:1.1">{valor}</div>
+                      color:{cor};line-height:1.25">{valor}</div>
           {delta_html}
         </div>
         """,
