@@ -11,11 +11,85 @@ from services.assessor import (
     criar_consulta,
     duplicar_como_base,
     excluir_consulta,
+    extrair_tickers_da_resposta,
     listar_consultas,
     montar_contexto_carteira,
     renomear_consulta,
     salvar_conversa,
 )
+
+
+def _formatar_pct(v):
+    return f"{v:.2f}%" if v is not None else "—"
+
+
+def _formatar_num(v, casas=2):
+    return f"{v:,.{casas}f}" if v is not None else "—"
+
+
+def renderizar_analise_tickers(tickers_lista: list, titulo: str):
+    """Para cada ticker, busca dados reais (yfinance) e mostra tabela +
+    gráfico Plotly no formato de research report."""
+    if not tickers_lista:
+        return
+    from services.analise_ticker import analisar, gerar_grafico, linha_comparativo
+    import pandas as pd
+
+    st.markdown(f"### 📊 {titulo}")
+    dados_por_ticker = {}
+    with st.spinner(f"Buscando dados de mercado ({len(tickers_lista)} tickers)..."):
+        for tk in tickers_lista:
+            d = analisar(tk)
+            if d:
+                dados_por_ticker[tk] = d
+
+    if not dados_por_ticker:
+        st.warning("Não consegui buscar dados dos tickers.")
+        return
+
+    # Tabela comparativa
+    linhas = [linha_comparativo(d) for d in dados_por_ticker.values()]
+    df = pd.DataFrame(linhas)
+    df_fmt = df.copy()
+    for col in ("Preço", "Máx 5a", "Mín 5a", "Média 5a"):
+        df_fmt[col] = df_fmt[col].apply(lambda v: f"R$ {v:,.2f}" if pd.notna(v) else "—")
+    for col in ("DY %", "ROE %", "Vol 1a %", "Vol 5a %", "Ret 1a %", "Ret 5a %", "% da faixa"):
+        df_fmt[col] = df_fmt[col].apply(lambda v: f"{v:.1f}%" if pd.notna(v) else "—")
+    for col in ("P/VP", "P/L"):
+        df_fmt[col] = df_fmt[col].apply(lambda v: f"{v:.2f}" if pd.notna(v) else "—")
+    st.dataframe(df_fmt, use_container_width=True, hide_index=True)
+    st.caption(
+        "**Legenda:** DY = dividend yield · P/VP = preço/valor patrimonial · "
+        "Vol = volatilidade anualizada · Ret = retorno acumulado · "
+        "% da faixa = posição do preço atual entre a mínima (0%) e máxima (100%) dos últimos 5 anos."
+    )
+
+    # Gráfico de cada ticker
+    for tk, d in dados_por_ticker.items():
+        with st.expander(f"📈 {tk} — {d['nome']}", expanded=len(dados_por_ticker) <= 3):
+            fig = gerar_grafico(d)
+            st.plotly_chart(fig, use_container_width=True)
+
+            i1, i2, i3, i4 = st.columns(4)
+            i1.metric("Preço atual", f"R$ {d['preco_atual']:,.2f}")
+            i2.metric("DY (12m)", _formatar_pct(d.get("dy_calculado") or d.get("dy")))
+            i3.metric("P/VP", _formatar_num(d.get("pvp")))
+            i4.metric("ROE", _formatar_pct(d.get("roe")))
+
+            i5, i6, i7, i8 = st.columns(4)
+            i5.metric("Vol 1a", _formatar_pct(d["vol_1a_pct"]))
+            i6.metric("Vol 5a", _formatar_pct(d["vol_5a_pct"]))
+            i7.metric("Retorno 5a", _formatar_pct(d["retorno_5a_pct"]))
+            i8.metric("Posição na faixa 5a", f"{d['posicao_5a_pct']:.0f}%",
+                       help="0% = mínima, 100% = máxima dos últimos 5 anos.")
+
+            st.caption(
+                f"Se voltar à **mínima 5a** (R$ {d['minima_5a']:,.2f}): "
+                f"queda de {d['dist_min_pct']:.1f}%. "
+                f"Se voltar à **máxima 5a** (R$ {d['maxima_5a']:,.2f}): "
+                f"alta de {d['dist_max_pct']:.1f}%. "
+                f"Preço médio 5a: **R$ {d['media_5a']:,.2f}**."
+            )
 
 init_db()
 
@@ -194,10 +268,21 @@ else:
     st.divider()
 
     # Exibe a conversa
-    for msg in dados["conversa"]:
+    for i, msg in enumerate(dados["conversa"]):
         with st.chat_message("user" if msg["role"] == "user" else "assistant",
                              avatar="🧑" if msg["role"] == "user" else "👔"):
             st.markdown(msg["content"])
+            # Se a mensagem do assessor tem bloco de tickers, renderiza a
+            # análise técnica logo abaixo (só da última mensagem — evita
+            # buscar dados de mercado toda vez que abre o histórico).
+            if msg["role"] == "assistant" and i == len(dados["conversa"]) - 1:
+                tks = extrair_tickers_da_resposta(msg["content"])
+                if tks["principais"]:
+                    renderizar_analise_tickers(tks["principais"],
+                                                "Análise técnica das principais")
+                if tks["reservas"]:
+                    renderizar_analise_tickers(tks["reservas"],
+                                                "Análise técnica das reservas")
 
     # Input para continuar
     nova = st.chat_input("Continue a conversa com o Ricardo — questione, peça detalhes, ajuste…")
@@ -214,13 +299,12 @@ else:
                         conversa=dados["conversa"],
                         nova_mensagem=nova,
                     )
-                    st.markdown(resposta)
                     nova_conversa = dados["conversa"] + [
                         {"role": "user", "content": nova},
                         {"role": "assistant", "content": resposta},
                     ]
                     salvar_conversa(cid, nova_conversa)
-                    st.rerun()
+                    st.rerun()  # rerun mostra a resposta + análise técnica
                 except Exception as e:
                     st.error(f"Falha: {e}")
 
