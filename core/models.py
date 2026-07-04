@@ -107,6 +107,9 @@ class TransacaoCartao(Base):
     revisado: Mapped[bool] = mapped_column(Boolean, default=False)
     # Marca "LUMAI": despesa da empresa a ser reembolsada para o usuário.
     lumai: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Data em que o reembolso LUMAI foi efetivamente recebido. Quando
+    # preenchido, o item sai do relatório de "a reembolsar".
+    reembolsado_em: Mapped[Optional[date]] = mapped_column(Date)
 
     fatura: Mapped["Fatura"] = relationship(back_populates="transacoes")
     categoria: Mapped[Optional["Categoria"]] = relationship()
@@ -126,6 +129,7 @@ class DespesaManual(Base):
     categoria_id: Mapped[Optional[int]] = mapped_column(ForeignKey("categorias.id"))
     mes_referencia: Mapped[Optional[str]] = mapped_column(String)  # AAAA-MM
     lumai: Mapped[bool] = mapped_column(Boolean, default=False)
+    reembolsado_em: Mapped[Optional[date]] = mapped_column(Date)
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     categoria: Mapped[Optional["Categoria"]] = relationship()

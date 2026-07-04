@@ -9,6 +9,7 @@ from services.cartao import (
     adicionar_categoria,
     atualizar_mes_referencia,
     comprovante_fatura,
+    desfazer_reembolso_fatura,
     detectar_banco,
     excluir_categoria,
     excluir_fatura,
@@ -17,6 +18,7 @@ from services.cartao import (
     listar_categorias,
     listar_faturas,
     listar_transacoes,
+    marcar_fatura_reembolsada,
     previsualizar,
     registrar_pagamento_fatura,
     remover_pagamento_fatura,
@@ -241,18 +243,23 @@ edit = st.data_editor(
     disabled=["id", "data", "descricao", "valor"],
     column_config={
         "id": None,
+        "reembolsado_em": None,
         "data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
         "descricao": st.column_config.TextColumn("Descrição", width="large"),
         "valor": st.column_config.NumberColumn("Valor (R$)", format="%.2f"),
         "categoria": st.column_config.SelectboxColumn("Categoria", options=categorias, required=True),
         "lumai": st.column_config.CheckboxColumn("LUMAI", help="Despesa da empresa, a reembolsar."),
+        "reembolsado": st.column_config.CheckboxColumn(
+            "Reembolsado",
+            help="Marque quando a LUMAI já pagou o reembolso — o item sai do relatório.",
+        ),
         "revisado": st.column_config.CheckboxColumn("Revisado"),
     },
     key=f"editor_{fatura_id}",
 )
 
 if st.button("Salvar revisão", type="primary"):
-    alteracoes = edit[["id", "categoria", "lumai", "revisado"]].to_dict("records")
+    alteracoes = edit[["id", "categoria", "lumai", "reembolsado", "revisado"]].to_dict("records")
     salvar_revisao(alteracoes)
     st.success("Revisão salva.")
     st.rerun()
@@ -285,6 +292,7 @@ if por_cat:
 # --- Reembolso LUMAI consolidado por fatura -------------------------------
 st.divider()
 st.subheader("💼 Reembolso LUMAI por fatura")
+st.caption("Só entram aqui as despesas LUMAI que **ainda não foram reembolsadas**.")
 reembolsos = reembolso_lumai_por_fatura()
 if reembolsos:
     df_re = pd.DataFrame(reembolsos)
@@ -294,6 +302,20 @@ if reembolsos:
     df_show.columns = ["Banco", "Mês ref.", "Itens", "Total a reembolsar"]
     st.dataframe(df_show, use_container_width=True, hide_index=True)
     st.metric("Total LUMAI em todas as faturas", f"R$ {total_geral:,.2f}")
+
+    # --- Marcar fatura inteira como reembolsada --------------------------
+    st.markdown("**✅ Já recebeu o reembolso de uma fatura?**")
+    op_re = {
+        f"#{r['fatura_id']} · {r['banco']} · {r['mes_referencia']} · R$ {r['total']:,.2f}": r["fatura_id"]
+        for r in reembolsos
+    }
+    sel_re = st.selectbox("Fatura", list(op_re.keys()), key="mark_reemb")
+    if st.button("Marcar todos os itens LUMAI desta fatura como reembolsados"):
+        n = marcar_fatura_reembolsada(op_re[sel_re])
+        st.success(f"{n} item(ns) marcado(s) como reembolsado(s). Sairam do relatório.")
+        for k in ("lumai_xlsx", "lumai_pdf"):
+            st.session_state.pop(k, None)
+        st.rerun()
 
     # --- Exportar relatório de reembolso (Excel / PDF) --------------------
     st.markdown("**Baixar relatório para reembolso:**")
@@ -323,4 +345,24 @@ if reembolsos:
             )
         st.caption("O Excel abre com as colunas separadas; o PDF vem detalhado e organizado por origem.")
 else:
-    st.caption("Nenhuma transação marcada como LUMAI ainda. Marque na revisão acima e salve.")
+    st.caption("Nenhuma transação LUMAI a reembolsar no momento.")
+
+# --- Reembolsos já pagos (histórico) --------------------------------------
+pagos = reembolso_lumai_por_fatura(incluir_pagos=True)
+pagos_filtrados = []
+for p in pagos:
+    a_pagar = next((r for r in reembolso_lumai_por_fatura() if r["fatura_id"] == p["fatura_id"]), None)
+    if a_pagar is None:  # todos os itens LUMAI dessa fatura já foram pagos
+        pagos_filtrados.append(p)
+if pagos_filtrados:
+    with st.expander(f"✅ Reembolsos já pagos ({len(pagos_filtrados)} fatura(s))"):
+        st.caption("Se marcou por engano, dá pra reabrir aqui.")
+        for p in pagos_filtrados:
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.write(f"#{p['fatura_id']} · {p['banco']} · {p['mes_referencia']} · **R$ {p['total']:,.2f}** · {p['itens']} item(ns)")
+            with col2:
+                if st.button("↩️ Reabrir", key=f"reab_{p['fatura_id']}"):
+                    n = desfazer_reembolso_fatura(p["fatura_id"])
+                    st.success(f"{n} item(ns) voltaram para o relatório.")
+                    st.rerun()

@@ -17,34 +17,41 @@ from core.models import Fatura
 from services.despesas import listar_despesas
 
 
-def itens_lumai() -> List[dict]:
-    """Todas as despesas marcadas como LUMAI, com origem e detalhe."""
+def itens_lumai(incluir_pagos: bool = False) -> List[dict]:
+    """Despesas LUMAI ainda a reembolsar (não pagas por padrão), com detalhe.
+    Passe `incluir_pagos=True` para relatório histórico completo."""
     itens: List[dict] = []
     with get_session() as s:
         for f in s.scalars(select(Fatura)).all():
             origem = f"Cartão {f.banco or '—'} · fatura {f.mes_referencia or '—'}"
             for t in f.transacoes:
-                if t.lumai:
-                    itens.append(
-                        {
-                            "origem": origem,
-                            "data": t.data,
-                            "descricao": t.descricao,
-                            "categoria": t.categoria.nome if t.categoria else "Outros",
-                            "valor": float(t.valor),
-                        }
-                    )
+                if not t.lumai:
+                    continue
+                if not incluir_pagos and t.reembolsado_em is not None:
+                    continue
+                itens.append(
+                    {
+                        "origem": origem,
+                        "data": t.data,
+                        "descricao": t.descricao,
+                        "categoria": t.categoria.nome if t.categoria else "Outros",
+                        "valor": float(t.valor),
+                    }
+                )
     for d in listar_despesas():
-        if d.get("lumai"):
-            itens.append(
-                {
-                    "origem": f"Despesa avulsa ({d['forma']})",
-                    "data": d["data"],
-                    "descricao": d["descricao"],
-                    "categoria": d["categoria"],
-                    "valor": float(d["valor"]),
-                }
-            )
+        if not d.get("lumai"):
+            continue
+        if not incluir_pagos and d.get("reembolsado"):
+            continue
+        itens.append(
+            {
+                "origem": f"Despesa avulsa ({d['forma']})",
+                "data": d["data"],
+                "descricao": d["descricao"],
+                "categoria": d["categoria"],
+                "valor": float(d["valor"]),
+            }
+        )
     itens.sort(key=lambda x: (x["origem"], x["data"]))
     return itens
 

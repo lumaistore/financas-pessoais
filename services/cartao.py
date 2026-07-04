@@ -166,6 +166,8 @@ def listar_transacoes(fatura_id: int) -> List[dict]:
                 "valor": t.valor,
                 "categoria": t.categoria.nome if t.categoria else "Outros",
                 "lumai": bool(t.lumai),
+                "reembolsado": t.reembolsado_em is not None,
+                "reembolsado_em": t.reembolsado_em,
                 "revisado": t.revisado,
             }
             for t in txs
@@ -173,7 +175,9 @@ def listar_transacoes(fatura_id: int) -> List[dict]:
 
 
 def salvar_revisao(alteracoes: List[dict]) -> None:
-    """Aplica edições. Cada item: {id, categoria, lumai, revisado} (campos opcionais)."""
+    """Aplica edições. Cada item: {id, categoria, lumai, reembolsado, revisado}
+    (campos opcionais). 'reembolsado' vira `reembolsado_em = today` se True."""
+    from datetime import date as _date
     with get_session() as s:
         for item in alteracoes:
             t = s.get(TransacaoCartao, item["id"])
@@ -183,8 +187,49 @@ def salvar_revisao(alteracoes: List[dict]) -> None:
                 t.categoria_id = _id_categoria(s, item["categoria"])
             if "lumai" in item:
                 t.lumai = bool(item["lumai"])
+            if "reembolsado" in item:
+                if bool(item["reembolsado"]):
+                    if t.reembolsado_em is None:
+                        t.reembolsado_em = _date.today()
+                else:
+                    t.reembolsado_em = None
             if "revisado" in item:
                 t.revisado = bool(item["revisado"])
+
+
+def marcar_fatura_reembolsada(fatura_id: int) -> int:
+    """Marca todos os itens LUMAI ainda não reembolsados da fatura como
+    reembolsados hoje. Retorna quantos foram marcados."""
+    from datetime import date as _date
+    with get_session() as s:
+        stmt = (
+            select(TransacaoCartao)
+            .where(TransacaoCartao.fatura_id == fatura_id)
+            .where(TransacaoCartao.lumai.is_(True))
+            .where(TransacaoCartao.reembolsado_em.is_(None))
+        )
+        n = 0
+        for t in s.scalars(stmt).all():
+            t.reembolsado_em = _date.today()
+            n += 1
+        return n
+
+
+def desfazer_reembolso_fatura(fatura_id: int) -> int:
+    """Reabre todos os itens LUMAI já reembolsados da fatura (volta para o
+    relatório de 'a reembolsar'). Retorna quantos foram reabertos."""
+    with get_session() as s:
+        stmt = (
+            select(TransacaoCartao)
+            .where(TransacaoCartao.fatura_id == fatura_id)
+            .where(TransacaoCartao.lumai.is_(True))
+            .where(TransacaoCartao.reembolsado_em.is_not(None))
+        )
+        n = 0
+        for t in s.scalars(stmt).all():
+            t.reembolsado_em = None
+            n += 1
+        return n
 
 
 # ---------------------------------------------------------------------------
@@ -237,25 +282,28 @@ def excluir_categoria(nome: str) -> bool:
 # Reembolso LUMAI
 # ---------------------------------------------------------------------------
 def total_lumai_fatura(fatura_id: int) -> float:
-    """Soma das transações marcadas como LUMAI numa fatura."""
+    """Soma das transações LUMAI a reembolsar (não pagas) numa fatura."""
     with get_session() as s:
         return float(
             s.scalar(
                 select(func.coalesce(func.sum(TransacaoCartao.valor), 0.0))
                 .where(TransacaoCartao.fatura_id == fatura_id)
                 .where(TransacaoCartao.lumai.is_(True))
+                .where(TransacaoCartao.reembolsado_em.is_(None))
             )
             or 0.0
         )
 
 
-def reembolso_lumai_por_fatura() -> List[dict]:
-    """Para cada fatura com despesas LUMAI: banco, mês, qtd e total a reembolsar."""
+def reembolso_lumai_por_fatura(incluir_pagos: bool = False) -> List[dict]:
+    """Para cada fatura com despesas LUMAI: banco, mês, qtd e total a
+    reembolsar. Por padrão só considera itens ainda NÃO reembolsados."""
     with get_session() as s:
         faturas = s.scalars(select(Fatura).order_by(Fatura.mes_referencia)).all()
         resultado = []
         for f in faturas:
-            marcadas = [t for t in f.transacoes if t.lumai]
+            marcadas = [t for t in f.transacoes if t.lumai
+                        and (incluir_pagos or t.reembolsado_em is None)]
             if not marcadas:
                 continue
             resultado.append(
