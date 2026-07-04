@@ -37,6 +37,13 @@ def _brl(v: Optional[float]) -> str:
     return f"R$ {v:,.2f}"
 
 
+def _cache(func=None, **kw):
+    """Wrapper opcional de cache (só ativa sob Streamlit)."""
+    from core.cache import cache_leitura
+    return cache_leitura(func, **kw) if func else cache_leitura(**kw)
+
+
+@_cache(ttl=1800)  # download de 5 anos é pesado; cacheia por 30 min
 def analisar(ticker: str, moeda: str = "BRL") -> Optional[Dict]:
     """Retorna um dicionário com todos os indicadores + série histórica.
     Retorna None se o ticker não foi encontrado."""

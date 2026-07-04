@@ -15,6 +15,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy import select
 
 from core.db import get_session
+from core.cache import cache_leitura, invalida_cache
 from core.models import ContaFinanceira
 
 TIPOS_CONTA = ["corrente", "poupança", "aplicação"]
@@ -36,6 +37,7 @@ def _norm(s: str) -> str:
 # ---------------------------------------------------------------------------
 # CRUD
 # ---------------------------------------------------------------------------
+@invalida_cache
 def adicionar_conta(apelido: str, banco: str, tipo: str, identificadores: str) -> int:
     with get_session() as s:
         c = ContaFinanceira(
@@ -49,6 +51,7 @@ def adicionar_conta(apelido: str, banco: str, tipo: str, identificadores: str) -
         return c.id
 
 
+@invalida_cache
 def atualizar_conta(cid: int, apelido: str, banco: str, tipo: str,
                     identificadores: str, ativa: bool = True) -> None:
     with get_session() as s:
@@ -62,6 +65,7 @@ def atualizar_conta(cid: int, apelido: str, banco: str, tipo: str,
         c.ativa = bool(ativa)
 
 
+@invalida_cache
 def excluir_conta(cid: int) -> None:
     with get_session() as s:
         c = s.get(ContaFinanceira, cid)
@@ -69,6 +73,7 @@ def excluir_conta(cid: int) -> None:
             s.delete(c)
 
 
+@cache_leitura
 def listar_contas(apenas_ativas: bool = True) -> List[dict]:
     with get_session() as s:
         stmt = select(ContaFinanceira).order_by(ContaFinanceira.apelido)
@@ -130,6 +135,7 @@ def detectar_conta(descricao: str,
     return "", None
 
 
+@invalida_cache
 def semear_contas_padrao() -> int:
     """Cria as contas básicas do usuário se ainda não existirem (idempotente).
     Ajuda no primeiro uso; usuário pode editar/excluir depois."""

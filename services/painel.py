@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy import select
 
+from core.cache import cache_leitura
 from core.db import get_session
 from core.models import Fatura, Movimentacao, RetiradaLucro, Exame
 
@@ -34,6 +35,7 @@ def _delta_pct(atual: float, anterior: float) -> Optional[float]:
 # ---------------------------------------------------------------------------
 # Fluxo do mês com comparativo
 # ---------------------------------------------------------------------------
+@cache_leitura
 def fluxo_com_delta(mes_ref: str) -> Dict:
     """Resumo do mês + comparativo (delta %) com o mês anterior."""
     from services.cartao import gasto_total
@@ -81,6 +83,7 @@ def fluxo_com_delta(mes_ref: str) -> Dict:
 # ---------------------------------------------------------------------------
 # Fluxo por conta bancária (Seção 4)
 # ---------------------------------------------------------------------------
+@cache_leitura
 def fluxo_por_conta(mes_ref: str) -> List[Dict]:
     """Retorna entradas/saídas por conta no mês."""
     from services.contas import listar_contas
@@ -112,6 +115,7 @@ def fluxo_por_conta(mes_ref: str) -> List[Dict]:
 # ---------------------------------------------------------------------------
 # Top despesas do mês
 # ---------------------------------------------------------------------------
+@cache_leitura
 def top_despesas(mes_ref: str, n: int = 5) -> List[Dict]:
     with get_session() as s:
         movs = s.scalars(
@@ -132,6 +136,7 @@ def top_despesas(mes_ref: str, n: int = 5) -> List[Dict]:
 # ---------------------------------------------------------------------------
 # Comparativo de categorias entre 2 meses
 # ---------------------------------------------------------------------------
+@cache_leitura
 def variacao_por_categoria(mes_ref: str) -> List[Dict]:
     """Compara gastos por categoria do mês atual vs anterior."""
     from services.movimentacoes import por_categoria
@@ -154,6 +159,7 @@ def variacao_por_categoria(mes_ref: str) -> List[Dict]:
 # ---------------------------------------------------------------------------
 # Dividendos / rendimentos recebidos no mês
 # ---------------------------------------------------------------------------
+@cache_leitura
 def dividendos_mes(mes_ref: str) -> float:
     """Aproximação: soma resgates + receitas que contenham palavras-chave
     típicas de proventos."""
@@ -178,6 +184,7 @@ def dividendos_mes(mes_ref: str) -> float:
 # ---------------------------------------------------------------------------
 # Aportes acumulados no ano
 # ---------------------------------------------------------------------------
+@cache_leitura
 def aportes_ano(ano: int) -> float:
     with get_session() as s:
         movs = s.scalars(
@@ -189,6 +196,7 @@ def aportes_ano(ano: int) -> float:
 # ---------------------------------------------------------------------------
 # Evolução do patrimônio líquido (últimos 12 meses)
 # ---------------------------------------------------------------------------
+@cache_leitura
 def evolucao_patrimonio_liquido() -> List[Dict]:
     """Combina snapshots de investimento + saldo devedor por data. Fica
     aproximado pra dívida (usa a atual em todos os pontos), mas dá a
@@ -208,6 +216,7 @@ def evolucao_patrimonio_liquido() -> List[Dict]:
 # ---------------------------------------------------------------------------
 # Alertas inteligentes
 # ---------------------------------------------------------------------------
+@cache_leitura
 def alertas(mes_ref: str) -> List[Dict]:
     """Retorna lista de alertas que merecem atenção do usuário.
     Cada alerta: {tipo, titulo, descricao, pagina_alvo, prioridade}."""

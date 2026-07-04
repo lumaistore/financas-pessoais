@@ -14,6 +14,7 @@ from typing import List, Optional
 
 from sqlalchemy import func, select
 
+from core.cache import cache_leitura, invalidar
 from core.db import get_session
 from core.models import Categoria, Movimentacao
 from services.contas import detectar_conta
@@ -105,7 +106,9 @@ def adicionar(
         )
         s.add(m)
         s.flush()
-        return m.id
+        novo_id = m.id
+    invalidar()
+    return novo_id
 
 
 def atualizar(mid: int, **campos) -> None:
@@ -134,6 +137,7 @@ def atualizar(mid: int, **campos) -> None:
             m.lumai = bool(campos["lumai"])
         if "observacao" in campos:
             m.observacao = (campos["observacao"] or "").strip() or None
+    invalidar()
 
 
 def excluir(mid: int) -> None:
@@ -141,8 +145,10 @@ def excluir(mid: int) -> None:
         m = s.get(Movimentacao, mid)
         if m:
             s.delete(m)
+    invalidar()
 
 
+@cache_leitura
 def listar(mes_referencia: Optional[str] = None,
            tipos: Optional[List[str]] = None) -> List[dict]:
     with get_session() as s:
@@ -169,6 +175,7 @@ def listar(mes_referencia: Optional[str] = None,
 # ---------------------------------------------------------------------------
 # Agregações
 # ---------------------------------------------------------------------------
+@cache_leitura
 def meses_disponiveis() -> List[str]:
     """Meses (AAAA-MM) que têm ao menos uma movimentação, do mais recente ao
     mais antigo."""
@@ -178,6 +185,7 @@ def meses_disponiveis() -> List[str]:
     return sorted(ms, reverse=True)
 
 
+@cache_leitura
 def total_por_tipo(mes_referencia: str, tipo: str, excluir_lumai: bool = True) -> float:
     """Total de um tipo no mês. Se `excluir_lumai=True` e for despesa,
     ignora as marcadas como LUMAI (não são gasto seu)."""
@@ -192,6 +200,7 @@ def total_por_tipo(mes_referencia: str, tipo: str, excluir_lumai: bool = True) -
         return float(s.scalar(stmt) or 0.0)
 
 
+@cache_leitura
 def resumo_mes(mes_referencia: str) -> dict:
     """Resumo do mês: receitas, despesas (excluindo LUMAI), aplicações,
     saldo real."""
@@ -208,6 +217,7 @@ def resumo_mes(mes_referencia: str) -> dict:
     }
 
 
+@cache_leitura
 def por_categoria(mes_referencia: str, tipo: str = "despesa",
                   excluir_lumai: bool = True) -> List[dict]:
     with get_session() as s:
@@ -228,6 +238,7 @@ def por_categoria(mes_referencia: str, tipo: str = "despesa",
         ]
 
 
+@cache_leitura
 def por_dia(mes_referencia: str, tipo: str = "despesa",
             excluir_lumai: bool = True) -> List[dict]:
     """Soma diária de um tipo no mês, para gráfico de evolução."""
@@ -244,6 +255,7 @@ def por_dia(mes_referencia: str, tipo: str = "despesa",
         return [{"data": d, "total": float(t or 0.0)} for d, t in s.execute(stmt)]
 
 
+@cache_leitura
 def por_fonte(mes_referencia: str, tipo: str = "receita") -> List[dict]:
     """Top fontes/descrições de um tipo — para gráfico de origem das
     receitas ou destinos das despesas."""
@@ -257,6 +269,7 @@ def por_fonte(mes_referencia: str, tipo: str = "receita") -> List[dict]:
     return itens
 
 
+@cache_leitura
 def total_lumai_a_reembolsar(mes_referencia: Optional[str] = None) -> float:
     """Soma das despesas LUMAI ainda não reembolsadas."""
     with get_session() as s:

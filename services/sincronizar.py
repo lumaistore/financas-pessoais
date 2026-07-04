@@ -37,8 +37,21 @@ def _tabela_existe(nome: str) -> bool:
     return nome in inspect(eng).get_table_names()
 
 
+def _chave(data_, valor_abs, descricao) -> tuple:
+    """Chave canônica de duplicata: (data, valor arredondado, prefixo desc)."""
+    return (data_, round(float(valor_abs), 2), (descricao or "").strip().lower()[:40])
+
+
+def _carregar_chaves(s) -> set:
+    """Carrega TODAS as chaves existentes de uma vez (evita N+1 de queries)."""
+    chaves = set()
+    for m in s.scalars(select(Movimentacao)).all():
+        chaves.add(_chave(m.data, m.valor, m.descricao))
+    return chaves
+
+
 def _ja_existe(s, data_, valor_abs, descricao) -> bool:
-    """Detector de duplicata por (data, valor, desc)."""
+    """Compat: detector de duplicata por query única (usado pontualmente)."""
     chave = (descricao or "").strip().lower()[:40]
     rs = s.scalars(
         select(Movimentacao)
@@ -60,12 +73,15 @@ def sincronizar_cartao() -> int:
     (mês em que você paga), não a data original da compra."""
     n = 0
     with get_session() as s:
+        chaves = _carregar_chaves(s)
         faturas = s.scalars(select(Fatura)).all()
         for f in faturas:
             origem = f"cartao:{f.banco or '?'}:{f.mes_referencia or '?'}"
             for t in f.transacoes:
-                if _ja_existe(s, t.data, abs(t.valor), t.descricao):
+                k = _chave(t.data, abs(t.valor), t.descricao)
+                if k in chaves:
                     continue
+                chaves.add(k)
                 m = Movimentacao(
                     data=t.data,
                     descricao=t.descricao,
@@ -100,13 +116,16 @@ def _sincronizar_receitas_antigas() -> int:
         except Exception:
             return 0
     with get_session() as s:
+        chaves = _carregar_chaves(s)
         for data_v, fonte, valor, _tipo, descricao in linhas:
             data_ = _para_data(data_v)
             if not data_:
                 continue
             desc = (descricao or fonte or "Receita").strip()
-            if _ja_existe(s, data_, abs(float(valor)), desc):
+            k = _chave(data_, abs(float(valor)), desc)
+            if k in chaves:
                 continue
+            chaves.add(k)
             m = Movimentacao(
                 data=data_,
                 descricao=desc,
@@ -134,14 +153,17 @@ def _sincronizar_despesas_antigas() -> int:
         except Exception:
             return 0
     with get_session() as s:
+        chaves = _carregar_chaves(s)
         for row in linhas:
             data_v, desc, valor, forma, cat_id, lumai, reemb = row
             data_ = _para_data(data_v)
             if not data_:
                 continue
             desc_str = (desc or "").strip() or "Despesa"
-            if _ja_existe(s, data_, abs(float(valor)), desc_str):
+            k = _chave(data_, abs(float(valor)), desc_str)
+            if k in chaves:
                 continue
+            chaves.add(k)
             m = Movimentacao(
                 data=data_,
                 descricao=desc_str,
@@ -181,9 +203,13 @@ def reclassificar_pagamentos_fatura() -> int:
 
 def sincronizar_tudo() -> Dict[str, int]:
     """Roda todas as sincronizações. Retorna quantas linhas criou/ajustou."""
-    return {
+    from core.cache import invalidar
+    resultado = {
         "cartão": sincronizar_cartao(),
         "receitas antigas": _sincronizar_receitas_antigas(),
         "despesas antigas": _sincronizar_despesas_antigas(),
         "pgto fatura reclassificados": reclassificar_pagamentos_fatura(),
     }
+    if sum(resultado.values()) > 0:
+        invalidar()  # dados mudaram → próxima leitura reflete
+    return resultado

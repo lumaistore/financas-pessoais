@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 
 from core.config import UPLOADS_DIR
 from core.db import get_session
+from core.cache import cache_leitura, invalida_cache
 from core.models import Categoria, Fatura, TransacaoCartao
 from parsers.categorizador import CATEGORIAS_PADRAO
 from parsers.registry import escolher_parser, extrair_fatura
@@ -30,6 +31,7 @@ def garantir_categorias_padrao() -> None:
                 s.add(Categoria(nome=nome))
 
 
+@cache_leitura
 def listar_categorias() -> List[dict]:
     garantir_categorias_padrao()
     with get_session() as s:
@@ -84,6 +86,7 @@ def previsualizar(pdf_path: str) -> dict:
     }
 
 
+@invalida_cache
 def importar_fatura(pdf_path: str, mes_referencia: Optional[str] = None) -> int:
     """Extrai e grava a fatura. Retorna o id da fatura criada."""
     garantir_categorias_padrao()
@@ -115,6 +118,7 @@ def importar_fatura(pdf_path: str, mes_referencia: Optional[str] = None) -> int:
 # ---------------------------------------------------------------------------
 # Consultas e edição
 # ---------------------------------------------------------------------------
+@cache_leitura
 def listar_faturas() -> List[dict]:
     with get_session() as s:
         faturas = s.scalars(select(Fatura).order_by(Fatura.data_importacao.desc())).all()
@@ -150,6 +154,7 @@ def listar_faturas() -> List[dict]:
         return resultado
 
 
+@cache_leitura
 def listar_transacoes(fatura_id: int) -> List[dict]:
     with get_session() as s:
         stmt = (
@@ -174,6 +179,7 @@ def listar_transacoes(fatura_id: int) -> List[dict]:
         ]
 
 
+@invalida_cache
 def salvar_revisao(alteracoes: List[dict]) -> None:
     """Aplica edições. Cada item: {id, categoria, lumai, reembolsado, revisado}
     (campos opcionais). 'reembolsado' vira `reembolsado_em = today` se True."""
@@ -197,6 +203,7 @@ def salvar_revisao(alteracoes: List[dict]) -> None:
                 t.revisado = bool(item["revisado"])
 
 
+@invalida_cache
 def marcar_fatura_reembolsada(fatura_id: int) -> int:
     """Marca todos os itens LUMAI ainda não reembolsados da fatura como
     reembolsados hoje. Retorna quantos foram marcados."""
@@ -215,6 +222,7 @@ def marcar_fatura_reembolsada(fatura_id: int) -> int:
         return n
 
 
+@invalida_cache
 def desfazer_reembolso_fatura(fatura_id: int) -> int:
     """Reabre todos os itens LUMAI já reembolsados da fatura (volta para o
     relatório de 'a reembolsar'). Retorna quantos foram reabertos."""
@@ -235,6 +243,7 @@ def desfazer_reembolso_fatura(fatura_id: int) -> int:
 # ---------------------------------------------------------------------------
 # Gestão de categorias
 # ---------------------------------------------------------------------------
+@invalida_cache
 def adicionar_categoria(nome: str) -> bool:
     """Cria uma categoria nova. Retorna False se o nome já existir/for vazio."""
     nome = (nome or "").strip()
@@ -248,6 +257,7 @@ def adicionar_categoria(nome: str) -> bool:
         return True
 
 
+@invalida_cache
 def renomear_categoria(nome_atual: str, nome_novo: str) -> bool:
     """Renomeia uma categoria (reflete em todas as transações por FK)."""
     nome_novo = (nome_novo or "").strip()
@@ -266,6 +276,7 @@ def renomear_categoria(nome_atual: str, nome_novo: str) -> bool:
         return True
 
 
+@invalida_cache
 def excluir_categoria(nome: str) -> bool:
     """Exclui uma categoria; transações ligadas a ela ficam sem categoria."""
     with get_session() as s:
@@ -281,6 +292,7 @@ def excluir_categoria(nome: str) -> bool:
 # ---------------------------------------------------------------------------
 # Reembolso LUMAI
 # ---------------------------------------------------------------------------
+@cache_leitura
 def total_lumai_fatura(fatura_id: int) -> float:
     """Soma das transações LUMAI a reembolsar (não pagas) numa fatura."""
     with get_session() as s:
@@ -295,6 +307,7 @@ def total_lumai_fatura(fatura_id: int) -> float:
         )
 
 
+@cache_leitura
 def reembolso_lumai_por_fatura(incluir_pagos: bool = False) -> List[dict]:
     """Para cada fatura com despesas LUMAI: banco, mês, qtd e total a
     reembolsar. Por padrão só considera itens ainda NÃO reembolsados."""
@@ -318,6 +331,7 @@ def reembolso_lumai_por_fatura(incluir_pagos: bool = False) -> List[dict]:
         return resultado
 
 
+@invalida_cache
 def excluir_fatura(fatura_id: int) -> None:
     with get_session() as s:
         f = s.get(Fatura, fatura_id)
@@ -325,6 +339,7 @@ def excluir_fatura(fatura_id: int) -> None:
             s.delete(f)
 
 
+@invalida_cache
 def registrar_pagamento_fatura(
     fatura_id: int,
     data_pagamento,
@@ -345,6 +360,7 @@ def registrar_pagamento_fatura(
             f.comprovante_dados = comprovante_dados
 
 
+@invalida_cache
 def remover_pagamento_fatura(fatura_id: int) -> None:
     """Desfaz o pagamento/validação (reabre a fatura e remove o comprovante)."""
     with get_session() as s:
@@ -367,6 +383,7 @@ def comprovante_fatura(fatura_id: int):
         return f.comprovante_nome, f.comprovante_dados
 
 
+@invalida_cache
 def atualizar_mes_referencia(fatura_id: int, mes_referencia: str) -> None:
     """Ajusta o mês de competência (AAAA-MM) de uma fatura (rótulo organizador)."""
     with get_session() as s:
@@ -383,6 +400,7 @@ def atualizar_mes_referencia(fatura_id: int, mes_referencia: str) -> None:
 # 06/junho é a fatura de MAIO. A fatura inteira entra nesse mês — inclusive as
 # parcelas — em vez de espalhar pelas datas originais das compras.
 # ---------------------------------------------------------------------------
+@cache_leitura
 def gasto_total(mes_referencia: Optional[str] = None) -> float:
     with get_session() as s:
         stmt = select(func.coalesce(func.sum(TransacaoCartao.valor), 0.0)).join(Fatura)
@@ -391,6 +409,7 @@ def gasto_total(mes_referencia: Optional[str] = None) -> float:
         return float(s.scalar(stmt) or 0.0)
 
 
+@cache_leitura
 def gasto_por_categoria(mes_referencia: Optional[str] = None) -> List[dict]:
     with get_session() as s:
         stmt = (
@@ -406,6 +425,7 @@ def gasto_por_categoria(mes_referencia: Optional[str] = None) -> List[dict]:
         return [{"categoria": nome or "Outros", "total": float(total or 0.0)} for nome, total in s.execute(stmt)]
 
 
+@cache_leitura
 def gasto_por_categoria_fatura(fatura_id: int) -> List[dict]:
     """Quebra por categoria das transações de UMA fatura (independe do mês)."""
     with get_session() as s:

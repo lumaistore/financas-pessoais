@@ -21,10 +21,26 @@ def get_engine():
     global _engine, _SessionLocal
     if _engine is None:
         url = get_db_url()
-        # SQLite precisa liberar acesso entre threads; Postgres não.
-        connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+        eh_sqlite = url.startswith("sqlite")
+        if eh_sqlite:
+            # SQLite precisa liberar acesso entre threads.
+            connect_args = {"check_same_thread": False}
+            kwargs = {}
+        else:
+            # Postgres (Neon): keepalives evitam que conexões ociosas caiam;
+            # pool_recycle recicla antes do timeout de inatividade do Neon,
+            # e um pool maior mantém conexões quentes entre reruns.
+            connect_args = {
+                "connect_timeout": 10,
+                "keepalives": 1,
+                "keepalives_idle": 30,
+                "keepalives_interval": 10,
+                "keepalives_count": 5,
+            }
+            kwargs = {"pool_size": 5, "max_overflow": 10, "pool_recycle": 280}
         _engine = create_engine(
-            url, future=True, connect_args=connect_args, pool_pre_ping=True
+            url, future=True, connect_args=connect_args,
+            pool_pre_ping=True, **kwargs,
         )
         _SessionLocal = sessionmaker(bind=_engine, class_=Session, expire_on_commit=False)
     return _engine

@@ -20,6 +20,7 @@ from typing import List, Optional
 from sqlalchemy import distinct, select
 
 from core.db import get_session
+from core.cache import cache_leitura, invalida_cache
 from core.models import InvestimentoSnapshot
 
 # Classes usadas para agrupar a carteira no painel.
@@ -109,6 +110,7 @@ def preencher_metadados_conhecidos(data_ref: date) -> int:
 # ---------------------------------------------------------------------------
 # Snapshots
 # ---------------------------------------------------------------------------
+@cache_leitura
 def listar_datas() -> List[date]:
     """Datas que possuem snapshot, da mais recente para a mais antiga."""
     with get_session() as s:
@@ -118,6 +120,7 @@ def listar_datas() -> List[date]:
         return list(datas)
 
 
+@cache_leitura
 def existe_snapshot() -> bool:
     with get_session() as s:
         return s.scalar(select(InvestimentoSnapshot.id).limit(1)) is not None
@@ -125,6 +128,7 @@ def existe_snapshot() -> bool:
 
 def criar_snapshot_inicial() -> bool:
     """Grava o snapshot pré-preenchido se a carteira ainda estiver vazia.
+    (Invalidação vem de salvar_snapshot, que só roda quando realmente cria.)
 
     Retorna True se criou, False se já existia algum snapshot.
     """
@@ -146,6 +150,7 @@ def criar_snapshot_inicial() -> bool:
     return True
 
 
+@cache_leitura
 def carregar_snapshot(data_ref: date) -> List[dict]:
     with get_session() as s:
         stmt = (
@@ -171,6 +176,7 @@ def carregar_snapshot(data_ref: date) -> List[dict]:
         ]
 
 
+@cache_leitura
 def cotacao_usd_do_snapshot(data_ref: date) -> float:
     """Recupera a cotação USD usada num snapshot (a dos ativos em USD)."""
     with get_session() as s:
@@ -183,6 +189,7 @@ def cotacao_usd_do_snapshot(data_ref: date) -> float:
         return float(c) if c else COTACAO_USD_PADRAO
 
 
+@invalida_cache
 def salvar_snapshot(data_ref: date, linhas: List[dict], cotacao_usd: float) -> None:
     """Substitui todas as posições da data por `linhas`.
 
@@ -226,6 +233,7 @@ def salvar_snapshot(data_ref: date, linhas: List[dict], cotacao_usd: float) -> N
             )
 
 
+@invalida_cache
 def adicionar_posicao(linha: dict, data_ref: Optional[date] = None) -> date:
     """Acrescenta UMA posição ao snapshot informado (ou ao mais recente; se não
     houver nenhum, cria um para hoje). Retorna a data do snapshot afetado."""
@@ -240,6 +248,7 @@ def adicionar_posicao(linha: dict, data_ref: Optional[date] = None) -> date:
     return data_ref
 
 
+@invalida_cache
 def excluir_snapshot(data_ref: date) -> None:
     with get_session() as s:
         for p in s.scalars(
@@ -251,6 +260,7 @@ def excluir_snapshot(data_ref: date) -> None:
 # ---------------------------------------------------------------------------
 # Agregações
 # ---------------------------------------------------------------------------
+@cache_leitura
 def total_carteira(data_ref: date) -> float:
     """Patrimônio total em BRL na data (converte USD pela cotação gravada)."""
     with get_session() as s:
@@ -260,6 +270,7 @@ def total_carteira(data_ref: date) -> float:
         return sum(_valor_brl(p.valor_mercado, p.cotacao) for p in posicoes)
 
 
+@cache_leitura
 def por_classe(data_ref: date) -> List[dict]:
     """Soma em BRL por classe de ativo, da maior para a menor."""
     with get_session() as s:
@@ -276,6 +287,7 @@ def por_classe(data_ref: date) -> List[dict]:
     return itens
 
 
+@cache_leitura
 def rendimento(data_ref: date) -> dict:
     """Rendimento em BRL (valor_mercado - valor_investido) das posições que
     têm custo conhecido. Retorna {investido, mercado, lucro, percentual}."""
@@ -292,6 +304,7 @@ def rendimento(data_ref: date) -> dict:
     return {"investido": investido, "mercado": mercado, "lucro": lucro, "percentual": pct}
 
 
+@cache_leitura
 def evolucao() -> List[dict]:
     """Patrimônio total (BRL) por data de snapshot, em ordem cronológica."""
     datas = sorted(listar_datas())

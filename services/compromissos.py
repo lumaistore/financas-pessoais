@@ -12,6 +12,7 @@ from typing import List, Optional
 from sqlalchemy import select
 
 from core.db import get_session
+from core.cache import cache_leitura, invalida_cache
 from core.models import Compromisso, CompromissoParcela, PagamentoCompromisso
 
 TIPOS_PAGAMENTO = ["entrada", "parcela", "seguro", "taxa", "amortização", "outros"]
@@ -55,6 +56,7 @@ def _data_parcela(c: Compromisso, numero: int) -> Optional[date]:
 # ---------------------------------------------------------------------------
 # CRUD
 # ---------------------------------------------------------------------------
+@invalida_cache
 def adicionar_compromisso(
     nome: str,
     valor_parcela: float,
@@ -80,6 +82,7 @@ def adicionar_compromisso(
         return c.id
 
 
+@invalida_cache
 def registrar_pagamento(compromisso_id: int, quantidade: int = 1) -> None:
     """Marca `quantidade` parcelas como pagas (sem ultrapassar o total)."""
     with get_session() as s:
@@ -90,6 +93,7 @@ def registrar_pagamento(compromisso_id: int, quantidade: int = 1) -> None:
         c.ativo = c.parcelas_pagas < c.total_parcelas
 
 
+@invalida_cache
 def definir_parcelas_pagas(compromisso_id: int, parcelas_pagas: int) -> None:
     with get_session() as s:
         c = s.get(Compromisso, compromisso_id)
@@ -99,6 +103,7 @@ def definir_parcelas_pagas(compromisso_id: int, parcelas_pagas: int) -> None:
         c.ativo = c.parcelas_pagas < c.total_parcelas
 
 
+@invalida_cache
 def excluir_compromisso(compromisso_id: int) -> None:
     with get_session() as s:
         c = s.get(Compromisso, compromisso_id)
@@ -176,6 +181,7 @@ def _resumo_imovel(c: Compromisso) -> dict:
     }
 
 
+@cache_leitura
 def listar_compromissos(apenas_ativos: bool = False) -> List[dict]:
     with get_session() as s:
         stmt = select(Compromisso).order_by(Compromisso.nome)
@@ -186,6 +192,7 @@ def listar_compromissos(apenas_ativos: bool = False) -> List[dict]:
     return resumos
 
 
+@cache_leitura
 def proximas_parcelas(compromisso_id: int, n: int = 6) -> List[dict]:
     """Lista as próximas `n` parcelas em aberto de um compromisso.
 
@@ -219,6 +226,7 @@ def proximas_parcelas(compromisso_id: int, n: int = 6) -> List[dict]:
         return resultado
 
 
+@cache_leitura
 def total_parcelas_mes(mes_referencia: str) -> float:
     """Soma das parcelas (de compromissos ativos) que vencem no mês 'AAAA-MM'.
 
@@ -235,15 +243,18 @@ def total_parcelas_mes(mes_referencia: str) -> float:
     return total
 
 
+@cache_leitura
 def total_saldo_devedor() -> float:
     return sum(r["saldo_devedor"] for r in listar_compromissos(apenas_ativos=True))
 
 
+@cache_leitura
 def total_financiamento_a_contratar() -> float:
     """Soma dos 'balões' de financiamento ainda a contratar (imóveis ativos)."""
     return sum(r.get("financiamento", 0.0) for r in listar_compromissos(apenas_ativos=True))
 
 
+@cache_leitura
 def contar_ativos() -> int:
     return len(listar_compromissos(apenas_ativos=True))
 
@@ -251,6 +262,7 @@ def contar_ativos() -> int:
 # ---------------------------------------------------------------------------
 # Imóveis (plano de pagamento heterogêneo)
 # ---------------------------------------------------------------------------
+@invalida_cache
 def adicionar_imovel(
     nome: str,
     data_contrato: Optional[date],
@@ -303,6 +315,7 @@ def _expandir_mensais(tipo: str, primeira: date, qtd: int, valor: float, passo_m
     ]
 
 
+@invalida_cache
 def seed_imoveis_sp() -> int:
     """Carga de imóveis a partir de contratos.
 
@@ -318,6 +331,7 @@ def seed_imoveis_sp() -> int:
 # Pagamentos avulsos (lançados manualmente, com comprovante) — útil para
 # financiamentos em evolução de obra (valor variável mês a mês).
 # ---------------------------------------------------------------------------
+@invalida_cache
 def adicionar_pagamento(
     compromisso_id: int,
     data_: date,
@@ -342,6 +356,7 @@ def adicionar_pagamento(
         return p.id
 
 
+@cache_leitura
 def listar_pagamentos(compromisso_id: int) -> List[dict]:
     with get_session() as s:
         rs = s.scalars(
@@ -363,6 +378,7 @@ def listar_pagamentos(compromisso_id: int) -> List[dict]:
         ]
 
 
+@invalida_cache
 def excluir_pagamento(pagamento_id: int) -> None:
     with get_session() as s:
         p = s.get(PagamentoCompromisso, pagamento_id)
@@ -378,6 +394,7 @@ def comprovante_pagamento(pagamento_id: int):
         return p.comprovante_nome, p.comprovante_dados
 
 
+@cache_leitura
 def total_pago_compromisso(compromisso_id: int) -> float:
     return sum(p["valor"] for p in listar_pagamentos(compromisso_id))
 
@@ -385,6 +402,7 @@ def total_pago_compromisso(compromisso_id: int) -> float:
 # ---------------------------------------------------------------------------
 # Cadastro do imóvel/financiamento de Carneiros (Caixa SFH)
 # ---------------------------------------------------------------------------
+@invalida_cache
 def cadastrar_carneiros() -> Optional[int]:
     """Cria o compromisso do Apto Carneiros (Caixa SFH) se ainda não existir.
     Retorna o id criado ou None se já existia. Os pagamentos reais são

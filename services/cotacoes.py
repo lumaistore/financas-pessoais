@@ -15,6 +15,7 @@ from typing import Dict, List, Optional
 import numpy as np
 from sqlalchemy import select
 
+from core.cache import cache_leitura
 from core.db import get_session
 from core.models import CarteiraHistorico
 from services.investimentos import (
@@ -60,6 +61,7 @@ def buscar_dolar() -> Optional[float]:
     return buscar_precos([TICKER_USD]).get(TICKER_USD)
 
 
+@cache_leitura(ttl=1800)  # CDI muda pouco; 30 min de cache evita rede a cada load
 def buscar_cdi_anual() -> float:
     """CDI ao ano (%) da série 4389 do Banco Central. Fallback em CDI_PADRAO."""
     import urllib.request
