@@ -15,6 +15,7 @@ from services.cartao import reembolso_lumai_por_fatura
 from services.compromissos import (
     contar_ativos,
     listar_compromissos,
+    resumo_imoveis,
     total_financiamento_a_contratar,
     total_saldo_devedor,
 )
@@ -258,29 +259,49 @@ with st.container(border=True):
         d_inv = datas_inv[0]
         carteira = total_carteira(d_inv)
         rend = rendimento(d_inv)
-        saldo_dev = total_saldo_devedor()
         financ = total_financiamento_a_contratar()
-        patrimonio_liq = carteira - saldo_dev
+        imoveis = resumo_imoveis()
+        pago_imoveis = imoveis["total_pago"]
+        # Patrimônio líquido = carteira + o que já foi pago nos imóveis
+        # (sem considerar juros/parcelas futuras).
+        patrimonio_liq = carteira + pago_imoveis
 
         p1, p2, p3 = st.columns(3)
-        p1.metric("💎 Patrimônio líquido", _brl(patrimonio_liq),
-                   help="Carteira de investimentos − saldo devedor.")
+        p1.metric(
+            "💎 Patrimônio líquido", _brl(patrimonio_liq),
+            help=(f"Carteira {_brl(carteira)} + já pago em imóveis "
+                  f"{_brl(pago_imoveis)}. Não considera juros nem parcelas futuras."),
+        )
         p2.metric("📈 Carteira", _brl(carteira),
                    f"{rend['percentual']:+.2f}% (custo conhecido)")
-        p3.metric("💳 Saldo devedor", _brl(saldo_dev),
-                   help="Total dos compromissos ativos.")
+        p3.metric("🏠 Já pago em imóveis", _brl(pago_imoveis),
+                   help="Soma do que você já pagou nos imóveis (SP + Carneiros), sem juros.")
 
+        # Discreto ao lado: quanto ainda falta pagar (sem juros).
+        partes_falta = [f"SP em parcelas: {_brl(imoveis['sp_falta'])}"]
+        if imoveis["carneiros_sem_valor"]:
+            partes_falta.append(
+                "Carneiros: informe o **valor do imóvel** na aba Financiamentos"
+            )
+        else:
+            partes_falta.append(
+                f"Carneiros (imóvel − pago): {_brl(imoveis['carneiros_falta'])}"
+            )
+        st.caption(
+            f"🧮 Falta pagar (sem juros): **{_brl(imoveis['falta_total'])}** "
+            f"— {' · '.join(partes_falta)}."
+        )
         if financ:
             st.caption(f"⚡ Além disso: {_brl(financ)} de financiamento imobiliário a contratar na entrega.")
 
-        # Evolução do patrimônio líquido
+        # Evolução da carteira de investimentos
         evo = evolucao_patrimonio_liquido()
         if len(evo) >= 2:
-            st.markdown("**Evolução do patrimônio líquido**")
+            st.markdown("**Evolução da carteira**")
             df_evo = pd.DataFrame(evo)
             df_evo["data"] = df_evo["data"].apply(lambda d: d.strftime("%d/%m/%Y"))
-            df_evo_show = df_evo[["data", "carteira", "patrimonio_liquido"]].copy()
-            df_evo_show.columns = ["Data", "Carteira", "Patrimônio líquido"]
+            df_evo_show = df_evo[["data", "carteira"]].copy()
+            df_evo_show.columns = ["Data", "Carteira"]
             st.line_chart(df_evo_show.set_index("Data"))
     else:
         st.caption("Nenhuma posição de investimento registrada. Cadastre em **Investimentos**.")

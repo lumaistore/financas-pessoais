@@ -19,6 +19,10 @@ TIPOS_PAGAMENTO = ["entrada", "parcela", "seguro", "taxa", "amortização", "out
 
 TIPOS = ["financiamento", "parcelado", "imovel"]
 
+# Valor do imóvel de Carneiros (sem juros) — usado no cálculo de patrimônio.
+# Pode ser ajustado pelo usuário via definir_valor_imovel().
+VALOR_IMOVEL_CARNEIROS = 693000.0
+
 
 # ---------------------------------------------------------------------------
 # Helpers de data
@@ -260,6 +264,71 @@ def contar_ativos() -> int:
 
 
 # ---------------------------------------------------------------------------
+# Imóveis: patrimônio (só o que já foi pago) + quanto falta (sem juros)
+# ---------------------------------------------------------------------------
+def _eh_imovel_compromisso(c: Compromisso) -> bool:
+    """SP são tipo 'imovel'; Carneiros é 'financiamento' mas também é imóvel."""
+    nome = (c.nome or "").lower()
+    return c.tipo == "imovel" or "carneiros" in nome or "sfh" in nome
+
+
+@invalida_cache
+def definir_valor_imovel(compromisso_id: int, valor: Optional[float]) -> None:
+    """Grava o valor do imóvel (sem juros) em valor_total_plano — usado para
+    Carneiros, onde só temos as parcelas com juros cadastradas."""
+    with get_session() as s:
+        c = s.get(Compromisso, compromisso_id)
+        if c:
+            c.valor_total_plano = float(valor) if valor else None
+
+
+@cache_leitura
+def resumo_imoveis() -> dict:
+    """Para o Painel de patrimônio:
+    - total_pago: soma do que JÁ FOI PAGO nos imóveis (SP + Carneiros),
+      sem juros/parcelas futuras.
+    - sp_falta: quanto falta em parcelas nos imóveis de SP (até a entrega,
+      exclui o balão de financiamento).
+    - carneiros_falta: valor do imóvel de Carneiros − o que já foi pago
+      (sem juros). Requer o valor do imóvel cadastrado.
+    """
+    total_pago = sp_falta = carn_falta = 0.0
+    carn_sem_valor = False
+    with get_session() as s:
+        comps = s.scalars(
+            select(Compromisso).where(Compromisso.ativo.is_(True))
+        ).all()
+        ids = [(c.id, c.tipo, c.nome, c.valor_pago, c.valor_total_plano,
+                c.valor_financiamento, _eh_imovel_compromisso(c)) for c in comps]
+
+    for cid, tipo, nome, valor_pago, total_plano, financ, eh_imovel in ids:
+        if not eh_imovel:
+            continue
+        pago = (valor_pago or 0.0) + total_pago_compromisso(cid)
+        total_pago += pago
+        if tipo == "imovel":
+            # Falta em parcelas até a entrega (exclui o balão de financiamento).
+            sp_falta += max(0.0, (total_plano or 0.0) - (financ or 0.0) - pago)
+        else:
+            # Carneiros: valor do imóvel (sem juros) − pago.
+            valor_imovel = total_plano or (
+                VALOR_IMOVEL_CARNEIROS if "carneiros" in (nome or "").lower() else None
+            )
+            if valor_imovel:
+                carn_falta += max(0.0, valor_imovel - pago)
+            else:
+                carn_sem_valor = True
+
+    return {
+        "total_pago": total_pago,
+        "sp_falta": sp_falta,
+        "carneiros_falta": carn_falta,
+        "carneiros_sem_valor": carn_sem_valor,
+        "falta_total": sp_falta + carn_falta,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Imóveis (plano de pagamento heterogêneo)
 # ---------------------------------------------------------------------------
 @invalida_cache
@@ -420,4 +489,6 @@ def cadastrar_carneiros() -> Optional[int]:
         tipo="financiamento",
         dia_vencimento=10,
     )
+    # Grava o valor do imóvel (sem juros) para o cálculo de patrimônio.
+    definir_valor_imovel(cid, VALOR_IMOVEL_CARNEIROS)
     return cid
