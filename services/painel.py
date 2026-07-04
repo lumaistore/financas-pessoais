@@ -37,23 +37,23 @@ def _delta_pct(atual: float, anterior: float) -> Optional[float]:
 # ---------------------------------------------------------------------------
 @cache_leitura
 def fluxo_com_delta(mes_ref: str) -> Dict:
-    """Resumo do mês + comparativo (delta %) com o mês anterior."""
-    from services.cartao import gasto_total
+    """Resumo do mês + comparativo (delta %) com o mês anterior.
+
+    Fonte ÚNICA de gasto: as movimentações (que já incluem o cartão após o
+    sync), sempre excluindo LUMAI. NÃO soma o cartão à parte — isso duplicaria
+    o valor e ainda incluiria LUMAI (bug antigo)."""
     from services.compromissos import total_parcelas_mes
     from services.movimentacoes import resumo_mes
 
     r = resumo_mes(mes_ref)
     r_ant = resumo_mes(mes_anterior(mes_ref))
 
-    gasto_cartao = gasto_total(mes_ref)
-    gasto_cartao_ant = gasto_total(mes_anterior(mes_ref))
-
     parcelas = total_parcelas_mes(mes_ref)
     parcelas_ant = total_parcelas_mes(mes_anterior(mes_ref))
 
     receitas = r["receitas"]
-    gasto_real = r["despesas"] + gasto_cartao
-    gasto_real_ant = r_ant["despesas"] + gasto_cartao_ant
+    gasto_real = r["despesas"]              # já exclui LUMAI e transferências
+    gasto_real_ant = r_ant["despesas"]
 
     sobra = receitas - gasto_real - parcelas - r["aplicacoes"] + r["resgates"]
     sobra_ant = (r_ant["receitas"] - gasto_real_ant - parcelas_ant
@@ -66,7 +66,7 @@ def fluxo_com_delta(mes_ref: str) -> Dict:
         "receitas": receitas,
         "receitas_delta": _delta_pct(receitas, r_ant["receitas"]),
         "gasto_real": gasto_real,
-        "gasto_cartao": gasto_cartao,
+        "gasto_cartao": 0.0,
         "gasto_movimentacoes": r["despesas"],
         "gasto_delta": _delta_pct(gasto_real, gasto_real_ant),
         "aplicacoes": r["aplicacoes"],

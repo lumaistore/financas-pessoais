@@ -27,7 +27,15 @@ from services.investimentos import (
     rendimento,
     total_carteira,
 )
-from services.movimentacoes import meses_disponiveis, por_categoria
+from services.movimentacoes import (
+    TIPOS,
+    adicionar,
+    atualizar,
+    excluir,
+    listar,
+    meses_disponiveis,
+    por_categoria,
+)
 from services.painel import (
     alertas,
     aportes_ano,
@@ -191,24 +199,117 @@ with c5:
     tom_meta = "sucesso" if f["taxa_poupanca"] >= 20 else "aviso"
     kpi("Taxa de poupança", f"{f['taxa_poupanca']:.0f}%", meta, tom_meta, icone="📊")
 
-# Detalhamento expansível dos gastos (mês atual + média por categoria)
-with st.expander("🔍 Ver detalhamento dos gastos"):
+# Auditoria editável das movimentações do mês (conferir/editar/remover/adicionar)
+with st.expander(f"🔍 Auditar movimentações de {_rotulo(mes_ref)} (editar, remover, adicionar)"):
+    st.caption(
+        "Confira lançamento por lançamento. Edite valores/categorias, marque **LUMAI** "
+        "para tirar do seu gasto, apague linhas erradas ou adicione o que faltou. "
+        "Os números dos cards acima vêm exatamente daqui."
+    )
+    _tipo_audit = st.radio(
+        "Auditar", ["despesa", "receita", "aplicacao", "resgate"],
+        horizontal=True, key="audit_tipo",
+        format_func=lambda x: {"despesa": "💸 Despesas", "receita": "💵 Receitas",
+                                "aplicacao": "📈 Aplicações", "resgate": "↩️ Resgates"}[x],
+    )
+    _movs = listar(mes_referencia=mes_ref, tipos=[_tipo_audit])
+    if _movs:
+        _base = pd.DataFrame([{
+            "id": m["id"], "data": m["data"], "descricao": m["descricao"],
+            "valor": float(m["valor"]), "categoria": m["categoria"],
+            "lumai": bool(m["lumai"]), "origem": m.get("origem") or "",
+        } for m in _movs])
+    else:
+        _base = pd.DataFrame({
+            "id": pd.Series(dtype="Int64"),
+            "data": pd.Series(dtype="datetime64[ns]"),
+            "descricao": pd.Series(dtype="object"),
+            "valor": pd.Series(dtype="float"),
+            "categoria": pd.Series(dtype="object"),
+            "lumai": pd.Series(dtype="bool"),
+            "origem": pd.Series(dtype="object"),
+        })
+
+    _edit = st.data_editor(
+        _base, num_rows="dynamic", use_container_width=True, hide_index=True,
+        key=f"audit_editor_{mes_ref}_{_tipo_audit}",
+        column_config={
+            "id": st.column_config.NumberColumn("id", disabled=True, width="small"),
+            "data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+            "descricao": st.column_config.TextColumn("Descrição", width="large"),
+            "valor": st.column_config.NumberColumn("Valor (R$)", format="%.2f", min_value=0.0),
+            "categoria": st.column_config.TextColumn("Categoria"),
+            "lumai": st.column_config.CheckboxColumn("LUMAI"),
+            "origem": st.column_config.TextColumn("Origem", disabled=True),
+        },
+    )
+
+    _total_visivel = float(_edit["valor"].fillna(0).sum()) if not _edit.empty else 0.0
+    st.caption(f"Soma dos {len(_edit)} lançamentos exibidos: **{_brl(_total_visivel)}**"
+               .replace("$", "\\$"))
+
+    if st.button("💾 Salvar auditoria", type="primary", key=f"save_audit_{mes_ref}_{_tipo_audit}"):
+        # Data padrão para novos lançamentos: 1º dia do mês auditado.
+        try:
+            _ano, _mm = mes_ref.split("-")
+            _data_padrao = date(int(_ano), int(_mm), 1)
+        except Exception:
+            _data_padrao = date.today()
+
+        _orig_ids = {int(m["id"]) for m in _movs}
+        _vistos = set()
+        _n_edit = _n_add = _n_del = 0
+        for _, _row in _edit.iterrows():
+            _rid = _row.get("id")
+            _tem_id = pd.notna(_rid)
+            _desc = str(_row.get("descricao") or "").strip()
+            _valor = _row.get("valor")
+            if pd.isna(_valor) or float(_valor) <= 0 or not _desc:
+                # linha nova em branco/incompleta → ignora
+                if not _tem_id:
+                    continue
+            _dt = _row.get("data")
+            if isinstance(_dt, pd.Timestamp):
+                _dt = _dt.date()
+            if _dt is None or (isinstance(_dt, float) and pd.isna(_dt)):
+                _dt = _data_padrao
+            _cat = str(_row.get("categoria") or "").strip() or None
+            _lumai = bool(_row.get("lumai"))
+            if _tem_id:
+                _rid = int(_rid)
+                _vistos.add(_rid)
+                atualizar(_rid, data=_dt, descricao=_desc, valor=float(_valor),
+                          tipo=_tipo_audit, categoria=_cat, lumai=_lumai)
+                _n_edit += 1
+            else:
+                adicionar(data_=_dt, descricao=_desc, valor=float(_valor),
+                          tipo=_tipo_audit, categoria=_cat, lumai=_lumai,
+                          origem="auditoria")
+                _n_add += 1
+        for _rid in _orig_ids - _vistos:
+            excluir(_rid)
+            _n_del += 1
+        st.success(f"Auditoria salva: {_n_edit} editado(s), {_n_add} adicionado(s), {_n_del} removido(s).")
+        st.rerun()
+
+    # Resumo por categoria + média (informativo)
+    st.divider()
     dc1, dc2 = st.columns(2)
     with dc1:
-        st.markdown(f"**{_rotulo(mes_ref)} — por categoria**")
+        st.markdown(f"**{_rotulo(mes_ref)} — gasto por categoria**")
         _cats_atual = por_categoria(mes_ref, tipo="despesa", excluir_lumai=True)
         if _cats_atual:
-            _df = pd.DataFrame(_cats_atual)
-            _df["total"] = _df["total"].apply(_brl)
-            _df.columns = ["Categoria", "Total"]
-            st.dataframe(_df, hide_index=True, use_container_width=True)
+            _dfc = pd.DataFrame(_cats_atual)
+            _dfc["total"] = _dfc["total"].apply(_brl)
+            _dfc.columns = ["Categoria", "Total"]
+            st.dataframe(_dfc, hide_index=True, use_container_width=True)
         else:
             st.caption("Sem gastos registrados neste mês.")
     with dc2:
         if mg["por_categoria"]:
             st.markdown("**Média por categoria (últimos meses)**")
-            _base = ", ".join(_rotulo_curto(m) for m, _ in mg["detalhe_meses"])
-            st.caption(f"Base: {_base}")
+            _basem = ", ".join(_rotulo_curto(m) for m, _ in mg["detalhe_meses"])
+            st.caption(f"Base: {_basem}")
             _dfm = pd.DataFrame(mg["por_categoria"], columns=["Categoria", "Média/mês"])
             _dfm["Média/mês"] = _dfm["Média/mês"].apply(_brl)
             st.dataframe(_dfm, hide_index=True, use_container_width=True)
