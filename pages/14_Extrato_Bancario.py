@@ -33,32 +33,42 @@ arq = st.file_uploader(
 if arq is None:
     st.stop()
 
-# Detecta senha (para PDFs protegidos, ex.: C6, Nubank)
+# Senha (para PDFs protegidos - Itaú/C6/Nubank frequentemente exigem).
+# Mostro SEMPRE o campo pra PDF - se não precisar, deixa em branco.
 senha = ""
-if arq.name.lower().endswith(".pdf") and pdf_pede_senha(arq.getvalue()):
-    st.warning(
-        "🔐 Este PDF está protegido por senha. Alguns bancos (C6, Nubank) "
-        "enviam o extrato criptografado. Digite a senha para eu abrir."
+if arq.name.lower().endswith(".pdf"):
+    st.caption(
+        "🔐 **PDF com senha?** (comum em Itaú/C6/Nubank) — digite abaixo. "
+        "Se o extrato não pedir senha, deixe em branco e clique fora."
     )
     senha = st.text_input(
-        "Senha do PDF (geralmente CPF ou senha específica do arquivo)",
+        "Senha do PDF (opcional)",
         type="password",
-        help="A senha é usada só localmente pra abrir o arquivo — não fica salva.",
+        key=f"senha_{arq.name}",
+        help="Geralmente CPF ou senha específica do arquivo. Usada só localmente.",
     )
-    if not senha:
-        st.stop()
 
 # Lê o arquivo uma vez e guarda em session_state (não relê a cada rerun)
-chave_arquivo = f"{arq.name}_{len(arq.getvalue())}_{bool(senha)}"
+chave_arquivo = f"{arq.name}_{len(arq.getvalue())}_{senha}"
 if st.session_state.get("extr_chave") != chave_arquivo:
     with st.spinner("Lendo o extrato..."):
         try:
             extrato = ler_extrato(arq.getvalue(), arq.name, senha=senha)
+            erro = None
         except Exception as e:
-            st.error(f"Não consegui abrir: {e}. Confira a senha ou o formato do arquivo.")
-            st.stop()
+            erro = str(e) or type(e).__name__
+            extrato = None
     st.session_state["extr_chave"] = chave_arquivo
     st.session_state["extr_dados"] = extrato
+    st.session_state["extr_erro"] = erro
+
+erro = st.session_state.get("extr_erro")
+if erro:
+    if "password" in erro.lower() or "encrypt" in erro.lower() or "decrypt" in erro.lower():
+        st.error(f"🔐 O PDF pede senha ou a senha está incorreta. Detalhe: {erro}")
+    else:
+        st.error(f"Não consegui ler o arquivo. Detalhe: {erro}")
+    st.stop()
 
 extrato = st.session_state.get("extr_dados")
 if extrato is None or not extrato.lancamentos:
