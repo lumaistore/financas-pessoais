@@ -139,16 +139,60 @@ def listar_consultas() -> List[dict]:
         rs = s.scalars(
             select(ConsultaAssessor).order_by(ConsultaAssessor.criada_em.desc())
         ).all()
-        return [
-            {
+        out = []
+        for r in rs:
+            conv = json.loads(r.conversa_json or "[]")
+            ultima = conv[-1]["content"][:120] if conv else ""
+            out.append({
                 "id": r.id,
                 "criada_em": r.criada_em,
                 "valor_investir": r.valor_investir,
                 "titulo": r.titulo,
-                "n_mensagens": len(json.loads(r.conversa_json or "[]")),
-            }
-            for r in rs
-        ]
+                "n_mensagens": len(conv),
+                "preview": ultima,
+            })
+        return out
+
+
+def renomear_consulta(cid: int, titulo: str) -> None:
+    with get_session() as s:
+        c = s.get(ConsultaAssessor, cid)
+        if c:
+            c.titulo = titulo.strip() or c.titulo
+
+
+def duplicar_como_base(cid_origem: int, valor_investir: Optional[float],
+                        contexto_atualizado: str, titulo: str) -> Optional[int]:
+    """Cria uma nova consulta contendo, como primeira mensagem do assessor,
+    um resumo da conversa anterior (para o Ricardo lembrar o histórico).
+    Assim, novas aplicações podem partir das decisões passadas."""
+    origem = carregar_consulta(cid_origem)
+    if not origem:
+        return None
+    conv_origem = origem["conversa"]
+    if not conv_origem:
+        return None
+
+    # Resumo bem simples: junta as respostas do assessor (primeira e última).
+    respostas = [m["content"] for m in conv_origem if m["role"] == "assistant"]
+    resumo_anterior = ""
+    if respostas:
+        primeira = respostas[0][:800]
+        ultima = respostas[-1][:800] if len(respostas) > 1 else ""
+        resumo_anterior = (
+            "**Resumo da sessão anterior (contexto):**\n\n"
+            f"{primeira}"
+            + (f"\n\n---\n\n{ultima}" if ultima else "")
+        )
+
+    cid = criar_consulta(valor_investir, contexto_atualizado, titulo)
+    if resumo_anterior:
+        # Marca como uma "mensagem do assistente" para o modelo levar em conta.
+        salvar_conversa(cid, [
+            {"role": "user", "content": "Lembre-se da nossa última consulta."},
+            {"role": "assistant", "content": resumo_anterior},
+        ])
+    return cid
 
 
 def carregar_consulta(cid: int) -> Optional[dict]:
