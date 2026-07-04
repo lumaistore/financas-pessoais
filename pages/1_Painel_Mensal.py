@@ -338,31 +338,46 @@ st.markdown("### 📊 Fluxo do mês em cascata")
 with st.container(border=True):
     import plotly.graph_objects as go
 
-    valores = [
-        f["receitas"], -f["gasto_real"], -f["parcelas"],
-        -f["aplicacoes"], f["resgates"], 0,
-    ]
-    medidas = ["absolute", "relative", "relative", "relative", "relative", "total"]
-    rotulos = ["Recebido", "Gastos", "Parcelas", "Aplicações", "Resgates", "Sobra"]
+    # Monta os passos, escondendo os intermediários zerados (menos poluição).
+    passos = [("Recebido", f["receitas"], "absolute")]
+    for nome, val in [("Gastos", -f["gasto_real"]), ("Parcelas", -f["parcelas"]),
+                      ("Aplicações", -f["aplicacoes"]), ("Resgates", f["resgates"])]:
+        if abs(val) > 0.005:
+            passos.append((nome, val, "relative"))
+    passos.append(("Sobra", f["sobra"], "total"))
+
+    rotulos = [p[0] for p in passos]
+    valores = [p[1] for p in passos]
+    medidas = [p[2] for p in passos]
 
     wf = go.Figure(go.Waterfall(
         orientation="v",
         measure=medidas,
         x=rotulos,
         y=valores,
-        text=[_brl(abs(v)) for v in valores[:-1]] + [_brl(f["sobra"])],
+        text=[_brl(abs(v)) for v in valores],
         textposition="outside",
-        connector={"line": {"color": "rgb(200,200,200)"}},
-        increasing={"marker": {"color": "#2ca02c"}},
-        decreasing={"marker": {"color": "#d62728"}},
-        totals={"marker": {"color": "#1f77b4"}},
+        cliponaxis=False,
+        connector={"line": {"color": COR["borda_forte"], "width": 1}},
+        increasing={"marker": {"color": COR["sucesso"]}},   # verde
+        decreasing={"marker": {"color": COR["perigo"]}},    # vermelho
+        totals={"marker": {"color": COR["primaria"]}},      # índigo
+        hovertemplate="%{x}: R$ %{y:,.2f}<extra></extra>",
     ))
     wf.update_layout(
-        height=380, showlegend=False,
-        margin=dict(l=20, r=20, t=10, b=20),
-        yaxis_title="R$", template="simple_white",
+        height=360, showlegend=False,
+        margin=dict(l=10, r=10, t=30, b=10),
+        template="simple_white",
+        yaxis=dict(title="", showgrid=True, gridcolor=COR["borda"],
+                   tickprefix="R$ ", zeroline=True, zerolinecolor=COR["borda_forte"]),
+        xaxis=dict(title=""),
+        font=dict(family="Inter, sans-serif", size=13),
     )
     st.plotly_chart(wf, use_container_width=True)
+    st.caption(
+        "Da esquerda para a direita: o que **entrou** (verde), o que **saiu** "
+        "(vermelho) e o que **sobrou** no mês (índigo)."
+    )
 
 # ═══════════════════════════════════════════════════════════════════════
 # SEÇÃO 3 — 💰 Onde está seu dinheiro (Patrimônio)
