@@ -35,8 +35,8 @@ from services.painel import (
     evolucao_patrimonio_liquido,
     fluxo_com_delta,
     fluxo_por_conta,
+    gastos_categoria_pivot,
     top_despesas,
-    variacao_por_categoria,
 )
 
 init_db()
@@ -58,6 +58,15 @@ def _rotulo(mes_str: str) -> str:
     try:
         ano, m = mes_str.split("-")
         return f"{MESES_PT[int(m)].capitalize()} / {ano}"
+    except Exception:
+        return mes_str
+
+
+def _rotulo_curto(mes_str: str) -> str:
+    """Rótulo compacto para cabeçalho de coluna: 'Julho/26'."""
+    try:
+        ano, m = mes_str.split("-")
+        return f"{MESES_PT[int(m)].capitalize()}/{ano[2:]}"
     except Exception:
         return mes_str
 
@@ -271,32 +280,70 @@ with st.container(border=True):
             st.caption("Sem gastos categorizados.")
 
     with gc2:
-        st.markdown("**Variação vs mês anterior**")
-        variacoes = variacao_por_categoria(mes_ref)
-        if variacoes:
-            top_var = variacoes[:6]
-            df_v = pd.DataFrame(top_var)
-            df_v_show = df_v[["categoria", "atual", "delta_valor"]].copy()
-            df_v_show["atual"] = df_v_show["atual"].apply(_brl)
-            df_v_show["delta_valor"] = df_v_show["delta_valor"].apply(
-                lambda v: f"{'↑' if v > 0 else '↓' if v < 0 else '='} {_brl(abs(v))}"
-            )
-            df_v_show.columns = ["Categoria", "Mês atual", "Variação"]
-            st.dataframe(df_v_show, use_container_width=True, hide_index=True)
+        st.markdown(f"**Top 5 despesas — {_rotulo(mes_ref)}**")
+        top5 = top_despesas(mes_ref, n=5)
+        if top5:
+            df_t = pd.DataFrame(top5)
+            df_t["data"] = df_t["data"].apply(lambda d: d.strftime("%d/%m/%Y"))
+            df_t["valor"] = df_t["valor"].apply(_brl)
+            df_t.columns = ["Data", "Descrição", "Valor", "Categoria"]
+            st.dataframe(df_t, use_container_width=True, hide_index=True)
         else:
-            st.caption("Sem dados de comparação.")
+            st.caption("Sem despesas neste mês.")
 
-    # Top 5 despesas
-    st.markdown("**Top 5 despesas do mês**")
-    top5 = top_despesas(mes_ref, n=5)
-    if top5:
-        df_t = pd.DataFrame(top5)
-        df_t["data"] = df_t["data"].apply(lambda d: d.strftime("%d/%m/%Y"))
-        df_t["valor"] = df_t["valor"].apply(_brl)
-        df_t.columns = ["Data", "Descrição", "Valor", "Categoria"]
-        st.dataframe(df_t, use_container_width=True, hide_index=True)
+    # ---- Gasto por categoria — mês a mês (todos os meses com dados) ----
+    st.markdown("**Gasto por categoria — mês a mês**")
+    pivot = gastos_categoria_pivot()
+    meses_p = pivot["meses"]
+    if meses_p and pivot["linhas"]:
+        registros = []
+        for ln in pivot["linhas"]:
+            reg = {"Categoria": ln["categoria"]}
+            for m in meses_p:
+                reg[_rotulo_curto(m)] = ln["por_mes"].get(m, 0.0)
+            registros.append(reg)
+        df_p = pd.DataFrame(registros)
+
+        # Variação entre os dois últimos meses COMPLETOS (ignora o mês corrente,
+        # que ainda está em andamento).
+        mes_corrente = date.today().strftime("%Y-%m")
+        completos = [m for m in meses_p if m != mes_corrente]
+        col_var = None
+        if len(completos) >= 2:
+            ant, ult = completos[-2], completos[-1]
+            col_var = f"Δ {_rotulo_curto(ant)}→{_rotulo_curto(ult)}"
+            df_p[col_var] = [
+                ln["por_mes"].get(ult, 0.0) - ln["por_mes"].get(ant, 0.0)
+                for ln in pivot["linhas"]
+            ]
+
+        # Linha de TOTAL ao final
+        totais = {"Categoria": "TOTAL"}
+        for m in meses_p:
+            totais[_rotulo_curto(m)] = sum(ln["por_mes"].get(m, 0.0) for ln in pivot["linhas"])
+        if col_var:
+            totais[col_var] = df_p[col_var].sum()
+        df_p = pd.concat([df_p, pd.DataFrame([totais])], ignore_index=True)
+
+        # Formatação em R$ (colunas de mês) e variação com seta.
+        for m in meses_p:
+            lbl = _rotulo_curto(m)
+            df_p[lbl] = df_p[lbl].apply(lambda v: f"R$ {v:,.2f}")
+        if col_var:
+            df_p[col_var] = df_p[col_var].apply(
+                lambda v: f"{'↑' if v > 0 else '↓' if v < 0 else '='} R$ {abs(v):,.2f}"
+            )
+
+        st.dataframe(df_p, use_container_width=True, hide_index=True)
+        if col_var:
+            st.caption(
+                f"Variação entre os dois últimos meses completos "
+                f"({_rotulo(completos[-2])} → {_rotulo(completos[-1])}). "
+                f"O mês corrente ({_rotulo(mes_corrente)}) está em andamento e "
+                f"fica de fora da comparação."
+            )
     else:
-        st.caption("Sem despesas registradas.")
+        st.caption("Ainda não há despesas registradas para comparar entre meses.")
 
 # ═══════════════════════════════════════════════════════════════════════
 # SEÇÃO 6 — 📈 Investimentos

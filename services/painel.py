@@ -160,6 +160,27 @@ def variacao_por_categoria(mes_ref: str) -> List[Dict]:
 # Dividendos / rendimentos recebidos no mês
 # ---------------------------------------------------------------------------
 @cache_leitura
+def gastos_categoria_pivot() -> Dict:
+    """Gasto por categoria em CADA mês com dados (para tabela mês a mês).
+
+    Retorna {'meses': [AAAA-MM em ordem crescente],
+             'linhas': [{'categoria': str, 'por_mes': {AAAA-MM: total}}]}.
+    """
+    from services.movimentacoes import meses_disponiveis, por_categoria
+
+    meses = sorted(meses_disponiveis())
+    dados: Dict[str, Dict[str, float]] = {}
+    for m in meses:
+        for row in por_categoria(m, tipo="despesa", excluir_lumai=True):
+            dados.setdefault(row["categoria"], {})[m] = row["total"]
+    linhas = [{"categoria": cat, "por_mes": v} for cat, v in dados.items()]
+    linhas.sort(key=lambda x: sum(x["por_mes"].values()), reverse=True)
+    # Só meses que têm alguma despesa (evita colunas vazias de meses só-receita).
+    meses_com_gasto = sorted({m for v in dados.values() for m in v})
+    return {"meses": meses_com_gasto, "linhas": linhas}
+
+
+@cache_leitura
 def dividendos_mes(mes_ref: str) -> float:
     """Aproximação: soma resgates + receitas que contenham palavras-chave
     típicas de proventos."""
