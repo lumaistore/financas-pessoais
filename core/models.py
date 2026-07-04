@@ -384,3 +384,23 @@ class InvestimentoMovimento(Base):
     quantidade: Mapped[Optional[float]] = mapped_column(Float)
     valor: Mapped[float] = mapped_column(Float, nullable=False)
     origem_arquivo: Mapped[Optional[str]] = mapped_column(String)
+
+
+class CompraInvestimento(Base):
+    """Histórico de compras/aportes. Cada compra também gera uma Movimentacao
+    do tipo 'aplicacao' (link em movimentacao_id), para contar no fluxo do mês."""
+
+    __tablename__ = "compras_investimento"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[date] = mapped_column(Date, nullable=False)
+    ativo: Mapped[str] = mapped_column(String, nullable=False)
+    ticker: Mapped[Optional[str]] = mapped_column(String)
+    classe: Mapped[Optional[str]] = mapped_column(String)
+    quantidade: Mapped[Optional[float]] = mapped_column(Float)
+    preco_unitario: Mapped[Optional[float]] = mapped_column(Float)
+    valor_total: Mapped[float] = mapped_column(Float, nullable=False)
+    moeda: Mapped[str] = mapped_column(String, default="BRL")
+    observacao: Mapped[Optional[str]] = mapped_column(String)
+    movimentacao_id: Mapped[Optional[int]] = mapped_column(Integer)
+    criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

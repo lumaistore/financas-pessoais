@@ -29,6 +29,7 @@ from services.investimentos import (
     salvar_snapshot,
 )
 from services.cotacoes import atualizar_cotacoes, buscar_dolar, evolucao_intradiaria, ganho_perda
+from services.aportes import excluir_compra, listar_compras, registrar_compra, total_aportes_mes
 
 INDEXADORES = ["", "CDI", "PREFIXADO", "IPCA"]
 
@@ -45,6 +46,95 @@ st.caption(
 # Semeia o snapshot inicial pré-preenchido na primeira vez.
 if criar_snapshot_inicial():
     st.success("Carregamos sua carteira inicial (01/06/2026) a partir dos prints enviados. Revise os valores abaixo.")
+
+# ---------------------------------------------------------------------------
+# 🛒 Compras / Aportes — histórico + conta como "Aplicação" do mês
+# ---------------------------------------------------------------------------
+st.subheader("🛒 Compras / Aportes")
+st.caption(
+    "Registre cada compra (ex.: 1000 BBAS3 a R\\$ 19,98 em 03/06). Cada compra "
+    "entra no **histórico** e vira uma **Aplicação** naquele mês — aparecendo no "
+    "'Aplicado' do Painel e nas Movimentações."
+)
+
+with st.expander("➕ Registrar compra / aporte", expanded=False):
+    with st.form("nova_compra", clear_on_submit=True):
+        cc1, cc2, cc3 = st.columns(3)
+        with cc1:
+            comp_data = st.date_input("Data da compra", value=date.today(), format="DD/MM/YYYY")
+            comp_ativo = st.text_input("Ativo", placeholder="Ex.: BBAS3, ITSA4")
+            comp_ticker = st.text_input("Ticker (opcional)", placeholder="Ex.: BBAS3")
+        with cc2:
+            comp_qtd = st.number_input("Quantidade", min_value=0.0, step=1.0, format="%.6f", value=0.0)
+            comp_preco = st.number_input("Preço unitário (R$)", min_value=0.0, step=0.01, format="%.2f", value=0.0)
+            comp_classe = st.selectbox("Classe", CLASSES)
+        with cc3:
+            comp_total = st.number_input(
+                "Valor total (R$) — opcional",
+                min_value=0.0, step=100.0, format="%.2f", value=0.0,
+                help="Se deixar 0, calculo automaticamente por quantidade × preço.",
+            )
+            comp_moeda = st.selectbox("Moeda", MOEDAS)
+            comp_somar = st.checkbox("Somar à carteira (posições)", value=True,
+                                      help="Desmarque se essa posição já está na foto da carteira.")
+        comp_obs = st.text_input("Observação (opcional)")
+
+        if st.form_submit_button("Registrar compra", type="primary"):
+            total = comp_total or (comp_qtd * comp_preco if comp_qtd and comp_preco else 0.0)
+            if not comp_ativo.strip():
+                st.error("Informe o ativo.")
+            elif total <= 0:
+                st.error("Informe quantidade + preço, ou o valor total.")
+            else:
+                registrar_compra(
+                    data_=comp_data, ativo=comp_ativo, valor_total=float(total),
+                    ticker=comp_ticker or None, classe=comp_classe,
+                    quantidade=comp_qtd or None, preco_unitario=comp_preco or None,
+                    moeda=comp_moeda, observacao=comp_obs or None,
+                    somar_carteira=comp_somar,
+                )
+                st.success(f"Compra registrada: {comp_ativo.upper()} — R\\$ {total:,.2f} "
+                           f"(aplicação lançada em {comp_data.strftime('%m/%Y')}).")
+                st.rerun()
+
+# Histórico de compras
+_compras = listar_compras()
+if _compras:
+    df_compras = pd.DataFrame(_compras)
+    df_compras["data"] = df_compras["data"].apply(lambda d: d.strftime("%d/%m/%Y"))
+    df_show = df_compras[["data", "ativo", "ticker", "quantidade", "preco_unitario",
+                          "valor_total", "classe"]].copy()
+    df_show["quantidade"] = df_show["quantidade"].apply(lambda v: f"{v:g}" if pd.notna(v) else "—")
+    df_show["preco_unitario"] = df_show["preco_unitario"].apply(
+        lambda v: f"R$ {v:,.2f}" if pd.notna(v) else "—")
+    df_show["valor_total"] = df_show["valor_total"].apply(lambda v: f"R$ {v:,.2f}")
+    df_show.columns = ["Data", "Ativo", "Ticker", "Qtd", "Preço", "Valor total", "Classe"]
+    st.dataframe(df_show, use_container_width=True, hide_index=True)
+
+    # Total por mês
+    tot_mes: dict = {}
+    for c in _compras:
+        tot_mes[c["mes_referencia"]] = tot_mes.get(c["mes_referencia"], 0.0) + c["valor_total"]
+    resumo_txt = " · ".join(
+        f"{m}: R\\$ {v:,.2f}" for m, v in sorted(tot_mes.items(), reverse=True)[:6]
+    )
+    st.caption(f"💰 Aportes por mês — {resumo_txt}")
+
+    # Excluir uma compra
+    op = {f"{c['data'].strftime('%d/%m/%Y')} · {c['ativo']} · R$ {c['valor_total']:,.2f}": c["id"]
+          for c in _compras}
+    ec1, ec2 = st.columns([3, 1])
+    with ec1:
+        sel_compra = st.selectbox("Excluir compra", ["(nenhuma)"] + list(op.keys()))
+    with ec2:
+        st.write("")
+        if st.button("🗑️ Excluir", disabled=sel_compra == "(nenhuma)"):
+            excluir_compra(op[sel_compra])
+            st.rerun()
+else:
+    st.info("Nenhuma compra registrada ainda. Use o formulário acima.")
+
+st.divider()
 
 # ---------------------------------------------------------------------------
 # Adicionar aplicação (formulário guiado)
