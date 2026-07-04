@@ -13,6 +13,7 @@ from services.extrato import (
     ler_extrato,
     marcar_duplicatas,
     meses_disponiveis,
+    pdf_pede_senha,
 )
 
 init_db()
@@ -32,11 +33,30 @@ arq = st.file_uploader(
 if arq is None:
     st.stop()
 
+# Detecta senha (para PDFs protegidos, ex.: C6, Nubank)
+senha = ""
+if arq.name.lower().endswith(".pdf") and pdf_pede_senha(arq.getvalue()):
+    st.warning(
+        "🔐 Este PDF está protegido por senha. Alguns bancos (C6, Nubank) "
+        "enviam o extrato criptografado. Digite a senha para eu abrir."
+    )
+    senha = st.text_input(
+        "Senha do PDF (geralmente CPF ou senha específica do arquivo)",
+        type="password",
+        help="A senha é usada só localmente pra abrir o arquivo — não fica salva.",
+    )
+    if not senha:
+        st.stop()
+
 # Lê o arquivo uma vez e guarda em session_state (não relê a cada rerun)
-chave_arquivo = f"{arq.name}_{len(arq.getvalue())}"
+chave_arquivo = f"{arq.name}_{len(arq.getvalue())}_{bool(senha)}"
 if st.session_state.get("extr_chave") != chave_arquivo:
     with st.spinner("Lendo o extrato..."):
-        extrato = ler_extrato(arq.getvalue(), arq.name)
+        try:
+            extrato = ler_extrato(arq.getvalue(), arq.name, senha=senha)
+        except Exception as e:
+            st.error(f"Não consegui abrir: {e}. Confira a senha ou o formato do arquivo.")
+            st.stop()
     st.session_state["extr_chave"] = chave_arquivo
     st.session_state["extr_dados"] = extrato
 

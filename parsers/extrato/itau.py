@@ -29,11 +29,11 @@ IGNORAR = re.compile(
 )
 
 
-def extrair(dados: bytes) -> ExtratoLido:
+def extrair(dados: bytes, senha: str = "") -> ExtratoLido:
     import pdfplumber
 
     texto = ""
-    with pdfplumber.open(io.BytesIO(dados)) as pdf:
+    with pdfplumber.open(io.BytesIO(dados), password=senha or "") as pdf:
         for pg in pdf.pages:
             # x_tolerance=2 preserva espaços entre colunas
             texto += (pg.extract_text(x_tolerance=2) or "") + "\n"

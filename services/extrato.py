@@ -17,10 +17,16 @@ from parsers.extrato.base import LancamentoExtrato
 from parsers.extrato.registry import extrair as _extrair
 
 
-def ler_extrato(dados: bytes, nome_arquivo: str):
+def ler_extrato(dados: bytes, nome_arquivo: str, senha: str = ""):
     """Extrai lançamentos de um arquivo de extrato. Devolve o objeto
-    ExtratoLido (com banco e lista) ou None se não reconhecer o formato."""
-    return _extrair(dados, nome_arquivo)
+    ExtratoLido (com banco e lista) ou None se não reconhecer o formato.
+    `senha` só é usada em PDFs protegidos."""
+    return _extrair(dados, nome_arquivo, senha=senha)
+
+
+def pdf_pede_senha(dados: bytes) -> bool:
+    from parsers.extrato.registry import pdf_pede_senha as _p
+    return _p(dados)
 
 
 def meses_disponiveis(lancamentos: List[LancamentoExtrato]) -> List[str]:
