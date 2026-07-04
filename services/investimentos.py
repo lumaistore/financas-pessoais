@@ -14,7 +14,7 @@ USD→BRL; o valor em reais é sempre `valor_mercado * cotacao`.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
 
 from sqlalchemy import distinct, select
@@ -22,6 +22,52 @@ from sqlalchemy import distinct, select
 from core.db import get_session
 from core.cache import cache_leitura, invalida_cache
 from core.models import InvestimentoSnapshot
+
+
+# ---------------------------------------------------------------------------
+# Normalização de valores vindos do st.data_editor (NaN/NaT/Timestamp/str)
+# ---------------------------------------------------------------------------
+def _vazio(v) -> bool:
+    """True para None e para NaN/NaT (que satisfazem v != v)."""
+    if v is None:
+        return True
+    try:
+        return v != v  # NaN e NaT
+    except Exception:
+        return False
+
+
+def _texto(v) -> str:
+    return "" if _vazio(v) else str(v).strip()
+
+
+def _numero(v) -> Optional[float]:
+    if _vazio(v) or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _data_norm(v) -> Optional[date]:
+    if _vazio(v):
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    if hasattr(v, "date"):  # pandas Timestamp
+        try:
+            return v.date()
+        except Exception:
+            return None
+    if isinstance(v, str):
+        try:
+            return date.fromisoformat(v[:10])
+        except ValueError:
+            return None
+    return None
 
 # Classes usadas para agrupar a carteira no painel.
 CLASSES = [
@@ -206,29 +252,30 @@ def salvar_snapshot(data_ref: date, linhas: List[dict], cotacao_usd: float) -> N
         s.flush()
 
         for ln in linhas:
-            ativo = (ln.get("ativo") or "").strip()
-            vm = ln.get("valor_mercado")
-            if not ativo or vm in (None, ""):
+            # Células vazias do data_editor vêm como NaN/NaT (não None): limpa.
+            ativo = _texto(ln.get("ativo"))
+            vm = _numero(ln.get("valor_mercado"))
+            if not ativo or vm is None:
                 continue  # ignora linhas em branco da tabela editável
-            moeda = (ln.get("moeda") or "BRL").upper()
+            moeda = (_texto(ln.get("moeda")) or "BRL").upper()
             cot = float(cotacao_usd) if moeda == "USD" else 1.0
-            ticker = (ln.get("ticker") or "").strip().upper() or None
-            indexador = (ln.get("indexador") or "").strip().upper() or None
+            ticker = (_texto(ln.get("ticker")).upper() or None)
+            indexador = (_texto(ln.get("indexador")).upper() or None)
             s.add(
                 InvestimentoSnapshot(
                     data=data_ref,
                     ativo=ativo,
-                    classe_ativo=ln.get("classe_ativo") or "Outros",
+                    classe_ativo=_texto(ln.get("classe_ativo")) or "Outros",
                     moeda=moeda,
-                    quantidade=ln.get("quantidade"),
-                    preco_unitario=ln.get("preco_unitario"),
+                    quantidade=_numero(ln.get("quantidade")),
+                    preco_unitario=_numero(ln.get("preco_unitario")),
                     valor_mercado=float(vm),
                     cotacao=cot,
-                    valor_investido=ln.get("valor_investido"),
+                    valor_investido=_numero(ln.get("valor_investido")),
                     ticker=ticker,
                     indexador=indexador,
-                    taxa_indice=ln.get("taxa_indice"),
-                    data_aplicacao=ln.get("data_aplicacao"),
+                    taxa_indice=_numero(ln.get("taxa_indice")),
+                    data_aplicacao=_data_norm(ln.get("data_aplicacao")),
                 )
             )
 
