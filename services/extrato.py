@@ -11,7 +11,7 @@ from typing import List, Optional
 from sqlalchemy import select
 
 from core.db import get_session
-from core.models import DespesaManual
+from core.models import Movimentacao
 from parsers.categorizador import CATEGORIAS_PADRAO, sugerir_categoria
 from parsers.extrato.base import LancamentoExtrato
 from parsers.extrato.registry import extrair as _extrair
@@ -56,30 +56,47 @@ def _chave(d: date, valor: float, desc: str) -> str:
 
 
 def existentes(mes_ref: str) -> set:
-    """Chaves das despesas já cadastradas no mês (para evitar duplicar)."""
+    """Chaves das movimentações já cadastradas no mês (evita duplicar)."""
     with get_session() as s:
-        stmt = select(DespesaManual).where(DespesaManual.mes_referencia == mes_ref)
+        stmt = select(Movimentacao).where(Movimentacao.mes_referencia == mes_ref)
         return {
             _chave(d.data, d.valor, d.descricao)
             for d in s.scalars(stmt).all()
         }
 
 
-def marcar_duplicatas(lancamentos: List[LancamentoExtrato], mes_ref: str) -> List[dict]:
-    """Devolve os lançamentos como dicts prontos para revisão na UI, marcando
-    quem parece duplicado do que já está no banco."""
+def marcar_duplicatas(lancamentos: List[LancamentoExtrato], mes_ref: str,
+                      conta_origem_id: Optional[int] = None) -> List[dict]:
+    """Devolve os lançamentos como dicts prontos para revisão na UI, com:
+    - detecção de duplicata (mesmo do modelo antigo)
+    - classificação automática (receita/despesa/transferência/aplicação)
+      baseada nas contas cadastradas do usuário.
+    """
+    from services.contas import detectar_conta
+    from services.movimentacoes import existe as existe_mov
+
     ja_tem = existentes(mes_ref)
     saida = []
     for l in lancamentos:
         chave = _chave(l.data, l.valor, l.descricao)
+        # Classificação automática pela descrição
+        tipo_detectado, destino_id = detectar_conta(l.descricao, conta_origem_id)
+        if tipo_detectado in ("transferencia", "aplicacao"):
+            tipo = tipo_detectado
+        else:
+            tipo = "receita" if l.valor > 0 else "despesa"
+        # Checa duplicata também na nova tabela Movimentacao
+        dup_nova = existe_mov(l.data, abs(l.valor), l.descricao)
         saida.append({
             "data": l.data,
             "descricao": l.descricao,
-            "valor": abs(l.valor),  # despesa é sempre positivo no cadastro
+            "valor": abs(l.valor),
+            "tipo": tipo,
             "forma": _forma_provavel(l.descricao),
             "categoria": sugerir_categoria(l.descricao) or "Outros",
-            "importar": chave not in ja_tem,
-            "duplicado": chave in ja_tem,
+            "importar": (chave not in ja_tem) and (not dup_nova) and tipo != "transferencia",
+            "duplicado": (chave in ja_tem) or dup_nova,
+            "conta_destino_id": destino_id,
             "lumai": False,
         })
     return saida
@@ -100,22 +117,27 @@ def _forma_provavel(desc: str) -> str:
 # ---------------------------------------------------------------------------
 # Importação
 # ---------------------------------------------------------------------------
-def importar(linhas: List[dict]) -> int:
-    """Insere no banco as linhas marcadas com importar=True. Retorna quantas
-    foram inseridas."""
-    from services.despesas import adicionar_despesa
+def importar(linhas: List[dict], conta_origem_id: Optional[int] = None,
+             origem_texto: str = "extrato") -> int:
+    """Insere no banco as linhas marcadas com importar=True como
+    Movimentacao (com tipo classificado). Retorna quantas foram inseridas."""
+    from services.movimentacoes import adicionar
 
     n = 0
     for ln in linhas:
         if not ln.get("importar"):
             continue
-        adicionar_despesa(
+        adicionar(
             data_=ln["data"],
             descricao=ln["descricao"],
             valor=float(ln["valor"]),
-            forma=ln.get("forma") or "outros",
-            categoria=(ln.get("categoria") or None) if ln.get("categoria") != "(sem)" else None,
+            tipo=ln.get("tipo") or "despesa",
+            forma=ln.get("forma") or None,
+            categoria=(ln.get("categoria") or None) if ln.get("categoria") not in (None, "(sem)") else None,
+            conta_id=conta_origem_id,
+            conta_destino_id=ln.get("conta_destino_id"),
             lumai=bool(ln.get("lumai")),
+            origem=origem_texto,
         )
         n += 1
     return n

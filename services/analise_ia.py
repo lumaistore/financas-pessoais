@@ -30,7 +30,11 @@ from services.investimentos import (
     rendimento,
     total_carteira,
 )
-from services.receitas import total_recebido
+from services.movimentacoes import total_por_tipo as _total_por_tipo
+
+
+def total_recebido(mes_ref: str) -> float:
+    return _total_por_tipo(mes_ref, "receita")
 
 # Carrega .env uma vez (silencioso se o arquivo não existir). override=True faz
 # o valor do .env vencer uma variável de ambiente herdada vazia do shell.

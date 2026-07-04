@@ -19,15 +19,15 @@ st.markdown(
     """
     Use o menu lateral (☰ no celular) para navegar pelas seções:
 
-    - **Painel Mensal** — visão consolidada: fluxo, patrimônio, reserva e orçamento.
-    - **Receitas** — entradas do mês.
-    - **Faturas de Cartão** — importe o PDF, revise categorias e marque despesas LUMAI.
-    - **Despesas** — PIX, boleto, Caju e outros gastos fora do cartão.
+    - **Painel Mensal** — visão consolidada: fluxo, patrimônio, compromissos.
+    - **🏦 Contas** — suas contas (Itaú, C6, BTG) para detectar transferências.
+    - **💰 Movimentações** — todas entradas e saídas do mês, unificadas.
+    - **Faturas de Cartão** — importe o PDF, revise categorias e marque LUMAI.
     - **Financiamentos** — parcelamentos, financiamentos e imóveis.
-    - **Investimentos** — carteira por snapshot e rendimento.
-    - **Orçamento** — metas de gasto por categoria.
-    - **Fluxo de Caixa** — projeção das saídas comprometidas.
-    - **Analisar Carteira** — leitura educativa por IA.
+    - **Investimentos** — carteira por snapshot, rendimento e cotações ao vivo.
+    - **Analisar Carteira** / **Assessor Investimentos** — análises por IA.
+    - **Retirada de Lucros**, **Despesas Médicas**, **Exames** — controles específicos.
+    - **Extrato Bancario** — importe PDF/OFX e classifique automático.
     """
 )
 

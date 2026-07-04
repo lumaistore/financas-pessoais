@@ -6,7 +6,8 @@ import streamlit as st
 
 from core.db import init_db
 from services.cartao import listar_categorias
-from services.despesas import FORMAS
+from services.contas import listar_contas
+from services.movimentacoes import FORMAS, TIPOS
 from services.extrato import (
     filtrar,
     importar,
@@ -83,13 +84,29 @@ st.success(
     f"✅ Banco: **{extrato.banco}** · **{len(extrato.lancamentos)}** lançamentos lidos."
 )
 
+# --- Conta de origem (importante pra detecção de transferências) ----------
+contas = listar_contas()
+if not contas:
+    st.warning(
+        "⚠️ Você não tem contas cadastradas. Vá em **🏦 Contas** para cadastrar "
+        "suas contas (Itaú, C6, BTG…) — isso permite ao sistema identificar "
+        "transferências entre suas contas e aplicações automaticamente."
+    )
+opcoes_conta = {c["apelido"]: c["id"] for c in contas}
+apelido_conta = st.selectbox(
+    "De qual conta é este extrato?",
+    ["(selecionar)"] + list(opcoes_conta.keys()),
+    help="Identifica a conta origem para o sistema não classificar como transferência pra ela mesma.",
+)
+conta_origem_id = opcoes_conta.get(apelido_conta) if apelido_conta != "(selecionar)" else None
+
 # --- Filtro de mês ---------------------------------------------------------
 meses = meses_disponiveis(extrato.lancamentos)
 if not meses:
     st.warning("Nenhum lançamento com data reconhecida.")
     st.stop()
 
-col_mes, col_deb = st.columns([2, 1])
+col_mes, col_tipo = st.columns([2, 2])
 with col_mes:
     mes_escolhido = st.selectbox(
         "Mês a importar",
@@ -97,14 +114,15 @@ with col_mes:
         index=0,
         help="O extrato pode trazer vários meses. Aqui você escolhe qual importar.",
     )
-with col_deb:
-    apenas_deb = st.checkbox(
-        "Apenas despesas (débitos)",
+with col_tipo:
+    incluir_receitas = st.checkbox(
+        "Incluir entradas (receitas / resgates)",
         value=True,
-        help="Se marcado, ignora recebimentos (créditos, transferências recebidas, rendimentos).",
+        help="Se marcado, receitas e resgates também são classificados e importados.",
     )
 
-filtrados = filtrar(extrato.lancamentos, mes_escolhido, apenas_debitos=apenas_deb)
+filtrados = filtrar(extrato.lancamentos, mes_escolhido,
+                    apenas_debitos=not incluir_receitas)
 if not filtrados:
     st.info(f"Nenhum lançamento em **{mes_escolhido}** com esse filtro.")
     st.stop()
@@ -113,9 +131,12 @@ st.write(f"**{len(filtrados)} lançamento(s) em {mes_escolhido}** — total "
          f"R$ {sum(abs(l.valor) for l in filtrados):,.2f}.")
 
 # --- Prepara linhas para revisão -------------------------------------------
-if st.session_state.get("extr_mes") != mes_escolhido or "extr_linhas" not in st.session_state:
-    st.session_state["extr_linhas"] = marcar_duplicatas(filtrados, mes_escolhido)
-    st.session_state["extr_mes"] = mes_escolhido
+chave_ses = f"{mes_escolhido}_{conta_origem_id}"
+if st.session_state.get("extr_mes") != chave_ses or "extr_linhas" not in st.session_state:
+    st.session_state["extr_linhas"] = marcar_duplicatas(
+        filtrados, mes_escolhido, conta_origem_id=conta_origem_id
+    )
+    st.session_state["extr_mes"] = chave_ses
 
 linhas = st.session_state["extr_linhas"]
 n_dup = sum(1 for l in linhas if l["duplicado"])
@@ -129,21 +150,36 @@ if n_dup:
 st.markdown("**Revise antes de importar** — edite categoria, forma, marque LUMAI e desmarque o que não quiser importar:")
 
 categorias = [c["nome"] for c in listar_categorias()]
+
+# Alerta sobre auto-classificação
+n_transf = sum(1 for l in linhas if l["tipo"] == "transferencia")
+n_apli = sum(1 for l in linhas if l["tipo"] == "aplicacao")
+if n_transf or n_apli:
+    partes = []
+    if n_transf:
+        partes.append(f"{n_transf} **transferência(s) interna(s)** (não vão ser importadas)")
+    if n_apli:
+        partes.append(f"{n_apli} **aplicação(ões)** (vão para Investimentos, não como despesa)")
+    st.info("🔍 Detectei: " + " · ".join(partes))
+
 df = pd.DataFrame(linhas)
 edit = st.data_editor(
     df,
     use_container_width=True,
     hide_index=True,
-    disabled=["duplicado"],
+    disabled=["duplicado", "conta_destino_id"],
     column_config={
+        "conta_destino_id": None,
         "data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
         "descricao": st.column_config.TextColumn("Descrição", width="large"),
         "valor": st.column_config.NumberColumn("Valor (R$)", format="%.2f"),
+        "tipo": st.column_config.SelectboxColumn("Tipo", options=TIPOS, required=True,
+                                                  help="Classificação automática. Ajuste se necessário."),
         "forma": st.column_config.SelectboxColumn("Forma", options=FORMAS, required=True),
         "categoria": st.column_config.SelectboxColumn("Categoria", options=categorias, required=True),
         "lumai": st.column_config.CheckboxColumn("LUMAI"),
         "importar": st.column_config.CheckboxColumn("Importar"),
-        "duplicado": st.column_config.CheckboxColumn("Dup?", help="Detectado como duplicado."),
+        "duplicado": st.column_config.CheckboxColumn("Dup?", help="Já cadastrado."),
     },
     key=f"editor_extr_{mes_escolhido}",
 )
@@ -156,11 +192,14 @@ c1.metric("Serão importados", f"{marcados} lançamento(s)", f"R$ {total_marcado
 with c2:
     st.write("")
     st.write("")
-    if st.button("📥 Importar despesas selecionadas", type="primary",
+    if st.button("📥 Importar como movimentações", type="primary",
                  disabled=marcados == 0):
         with st.spinner("Importando..."):
-            n = importar(edit.to_dict("records"))
-        st.success(f"{n} despesa(s) importada(s) em {mes_escolhido}!")
+            origem = f"extrato:{extrato.banco}:{mes_escolhido}"
+            n = importar(edit.to_dict("records"),
+                          conta_origem_id=conta_origem_id,
+                          origem_texto=origem)
+        st.success(f"{n} movimentação(ões) importada(s) em {mes_escolhido}!")
         for k in ("extr_chave", "extr_dados", "extr_linhas", "extr_mes"):
             st.session_state.pop(k, None)
         st.rerun()

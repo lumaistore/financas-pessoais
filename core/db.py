@@ -88,18 +88,36 @@ def _sincronizar_sequencias_postgres() -> None:
 _inicializado = False
 
 
-def init_db() -> None:
-    """Cria tabelas e aplica migrações — uma única vez por processo.
+# Tabelas removidas na reforma (receitas/despesas/orcamento agora vivem em
+# 'movimentacoes'). Apagamos apenas se o usuário migrar os dados; senão fica.
+_TABELAS_OBSOLETAS = ("receitas", "despesas_manuais", "orcamentos")
 
-    Como cada página chama init_db(), o controle `_inicializado` evita refazer
-    introspecção + sync de sequences a cada navegação (custoso com banco na
-    nuvem). Roda só na primeira vez; depois é praticamente instantâneo."""
+
+def _apagar_tabelas_obsoletas() -> None:
+    """Se o usuário confirmou a reforma (via env FIN_APAGAR_ANTIGAS=1), dropa
+    as tabelas velhas. Por padrão NÃO apaga — a migração das movimentações
+    antigas fica preservada até rodar migrar_antigas_para_movimentacoes()."""
+    import os
+    if os.environ.get("FIN_APAGAR_ANTIGAS") != "1":
+        return
+    eng = get_engine()
+    insp = inspect(eng)
+    tabelas = set(insp.get_table_names())
+    with eng.begin() as conn:
+        for t in _TABELAS_OBSOLETAS:
+            if t in tabelas:
+                conn.execute(text(f"DROP TABLE IF EXISTS {t}"))
+
+
+def init_db() -> None:
+    """Cria tabelas e aplica migrações — uma única vez por processo."""
     global _inicializado
     if _inicializado:
         return
     Base.metadata.create_all(get_engine())
     _migrar_colunas()
     _sincronizar_sequencias_postgres()
+    _apagar_tabelas_obsoletas()
     _inicializado = True
 
 

@@ -36,15 +36,7 @@ class Instituicao(Base):
 # ---------------------------------------------------------------------------
 # RECEITAS  (Fase 1)
 # ---------------------------------------------------------------------------
-class Receita(Base):
-    __tablename__ = "receitas"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    data: Mapped[date] = mapped_column(Date, nullable=False)
-    fonte: Mapped[str] = mapped_column(String, nullable=False)
-    tipo: Mapped[str] = mapped_column(String, default="outros")  # salario / outros
-    valor: Mapped[float] = mapped_column(Float, nullable=False)
-    descricao: Mapped[Optional[str]] = mapped_column(String)
+# Modelo Receita removido na reforma. Ver Movimentacao (tipo='receita').
 
 
 # ---------------------------------------------------------------------------
@@ -58,16 +50,7 @@ class Categoria(Base):
     cor: Mapped[Optional[str]] = mapped_column(String)
 
 
-class Orcamento(Base):
-    """Meta de gasto mensal por categoria (teto). Usada para alertas no painel."""
-
-    __tablename__ = "orcamentos"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    categoria_id: Mapped[int] = mapped_column(ForeignKey("categorias.id"), unique=True)
-    limite_mensal: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-
-    categoria: Mapped["Categoria"] = relationship()
+# Modelo Orcamento removido na reforma.
 
 
 class Fatura(Base):
@@ -115,24 +98,7 @@ class TransacaoCartao(Base):
     categoria: Mapped[Optional["Categoria"]] = relationship()
 
 
-class DespesaManual(Base):
-    """Gasto que não vem de fatura de cartão: PIX, boleto, débito, dinheiro,
-    Caju (vale), etc. Lançado manualmente pelo usuário."""
-
-    __tablename__ = "despesas_manuais"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    data: Mapped[date] = mapped_column(Date, nullable=False)
-    descricao: Mapped[str] = mapped_column(String, nullable=False)
-    valor: Mapped[float] = mapped_column(Float, nullable=False)
-    forma: Mapped[str] = mapped_column(String, default="pix")  # pix/boleto/débito/dinheiro/caju/outros
-    categoria_id: Mapped[Optional[int]] = mapped_column(ForeignKey("categorias.id"))
-    mes_referencia: Mapped[Optional[str]] = mapped_column(String)  # AAAA-MM
-    lumai: Mapped[bool] = mapped_column(Boolean, default=False)
-    reembolsado_em: Mapped[Optional[date]] = mapped_column(Date)
-    criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
-
-    categoria: Mapped[Optional["Categoria"]] = relationship()
+# Modelo DespesaManual removido na reforma — agora tudo é Movimentacao.
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +264,69 @@ class Exame(Base):
     texto_extraido: Mapped[Optional[str]] = mapped_column(String, deferred=True)
     analise_ia: Mapped[Optional[str]] = mapped_column(String, deferred=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class ContaFinanceira(Base):
+    """Conta bancária ou de aplicação do usuário. Usada para detectar
+    transferências entre próprias contas (não são despesa/receita reais) e
+    aplicações (vão para carteira de investimentos, não são despesa)."""
+
+    __tablename__ = "contas_financeiras"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    apelido: Mapped[str] = mapped_column(String, nullable=False)  # "Itaú CC", "C6 CC", "BTG Investimento"
+    banco: Mapped[Optional[str]] = mapped_column(String)  # "Itaú", "C6", "BTG"
+    tipo: Mapped[str] = mapped_column(String, default="corrente")  # corrente / poupança / aplicação
+    # Palavras-chave que aparecem em descrições de extrato para identificar
+    # essa conta (nome do titular, razão social, apelidos). Separadas por
+    # vírgula. Ex.: "LUCAS GUEIROS,GUEIROS DE FREITAS,LGFAM"
+    identificadores: Mapped[Optional[str]] = mapped_column(String)
+    ativa: Mapped[bool] = mapped_column(Boolean, default=True)
+    criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class Movimentacao(Base):
+    """Entrada ou saída financeira detectada automaticamente do extrato,
+    lançada manualmente, ou vinda de fatura de cartão. Substitui Receita +
+    DespesaManual do modelo antigo."""
+
+    __tablename__ = "movimentacoes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[date] = mapped_column(Date, nullable=False)
+    descricao: Mapped[str] = mapped_column(String, nullable=False)
+    valor: Mapped[float] = mapped_column(Float, nullable=False)  # positivo sempre; direção vem do tipo
+
+    # Classificação principal — direciona os relatórios do painel.
+    # "receita"           → entrou dinheiro real (salário, LUMAI, venda)
+    # "despesa"           → saiu dinheiro real
+    # "transferencia"     → transferência entre contas do próprio usuário (ignorada em totais)
+    # "aplicacao"         → PIX/TED para conta de aplicação (BTG etc.); vai para Investimentos
+    # "resgate"           → volta de aplicação (crédito de resgate)
+    tipo: Mapped[str] = mapped_column(String, default="despesa")
+
+    # Conta em que a movimentação ocorreu (opcional; útil para ligar ao extrato)
+    conta_id: Mapped[Optional[int]] = mapped_column(ForeignKey("contas_financeiras.id"))
+    # Se for transferência/aplicação, aqui vai a conta destino identificada.
+    conta_destino_id: Mapped[Optional[int]] = mapped_column(ForeignKey("contas_financeiras.id"))
+
+    forma: Mapped[Optional[str]] = mapped_column(String)  # pix/boleto/débito/cartão/dinheiro/caju
+    categoria_id: Mapped[Optional[int]] = mapped_column(ForeignKey("categorias.id"))
+    mes_referencia: Mapped[Optional[str]] = mapped_column(String)  # AAAA-MM
+    observacao: Mapped[Optional[str]] = mapped_column(String)
+
+    # Marcas de reembolso LUMAI (herança do modelo antigo).
+    lumai: Mapped[bool] = mapped_column(Boolean, default=False)
+    reembolsado_em: Mapped[Optional[date]] = mapped_column(Date)
+
+    # Rastreabilidade: se veio de extrato ou fatura de cartão.
+    origem: Mapped[Optional[str]] = mapped_column(String)  # "extrato:C6", "fatura:itau_202605", "manual"
+
+    criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+    conta: Mapped[Optional["ContaFinanceira"]] = relationship(foreign_keys=[conta_id])
+    conta_destino: Mapped[Optional["ContaFinanceira"]] = relationship(foreign_keys=[conta_destino_id])
+    categoria: Mapped[Optional["Categoria"]] = relationship()
 
 
 class PerfilUsuario(Base):

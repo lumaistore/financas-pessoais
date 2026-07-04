@@ -14,7 +14,16 @@ from sqlalchemy import select
 
 from core.db import get_session
 from core.models import Fatura
-from services.despesas import listar_despesas
+from services.movimentacoes import listar as _listar_movs
+
+
+def listar_despesas():
+    """Wrapper compat: retorna despesas LUMAI para o relatório."""
+    return [
+        {**m, "reembolsado": m["reembolsado"]}
+        for m in _listar_movs()
+        if m["tipo"] == "despesa" and m["lumai"]
+    ]
 
 
 def itens_lumai(incluir_pagos: bool = False) -> List[dict]:
