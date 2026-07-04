@@ -16,7 +16,6 @@ from services.compromissos import (
     contar_ativos,
     listar_compromissos,
     resumo_imoveis,
-    total_financiamento_a_contratar,
     total_saldo_devedor,
 )
 from services.cotacoes import buscar_cdi_anual, buscar_dolar
@@ -259,7 +258,6 @@ with st.container(border=True):
         d_inv = datas_inv[0]
         carteira = total_carteira(d_inv)
         rend = rendimento(d_inv)
-        financ = total_financiamento_a_contratar()
         imoveis = resumo_imoveis()
         pago_imoveis = imoveis["total_pago"]
         # Patrimônio líquido = carteira + o que já foi pago nos imóveis
@@ -277,22 +275,30 @@ with st.container(border=True):
         p3.metric("🏠 Já pago em imóveis", _brl(pago_imoveis),
                    help="Soma do que você já pagou nos imóveis (SP + Carneiros), sem juros.")
 
-        # Discreto ao lado: quanto ainda falta pagar (sem juros).
-        partes_falta = [f"SP em parcelas: {_brl(imoveis['sp_falta'])}"]
-        if imoveis["carneiros_sem_valor"]:
-            partes_falta.append(
-                "Carneiros: informe o **valor do imóvel** na aba Financiamentos"
-            )
-        else:
-            partes_falta.append(
-                f"Carneiros (imóvel − pago): {_brl(imoveis['carneiros_falta'])}"
-            )
-        st.caption(
-            f"🧮 Falta pagar (sem juros): **{_brl(imoveis['falta_total'])}** "
-            f"— {' · '.join(partes_falta)}."
+        # Linha única: saldo a pagar do financiamento imobiliário.
+        # Hover (title) destrincha por imóvel.
+        def _brlh(v):
+            return f"R&#36; {v:,.2f}"
+
+        linhas_hover = []
+        for dimo in imoveis["detalhe"]:
+            if dimo["carneiros"]:
+                linhas_hover.append(
+                    f"{dimo['nome']}: {_brlh(dimo['total'])} (valor do imóvel − já pago)"
+                )
+            else:
+                linhas_hover.append(
+                    f"{dimo['nome']}: {_brlh(dimo['total'])} "
+                    f"(parcelas {_brlh(dimo['parcelas'])} + financiamento {_brlh(dimo['financiamento'])})"
+                )
+        hover_imoveis = "&#10;".join(linhas_hover) or "Sem imóveis cadastrados"
+        st.markdown(
+            f'<div title="{hover_imoveis}" style="cursor:help;color:{COR["texto_2"]};'
+            f'font-size:13.5px;margin-top:6px">🏠 Saldo a pagar (financiamento '
+            f'imobiliário): <b style="color:{COR["texto"]}">{_brlh(imoveis["saldo_a_pagar"])}</b> '
+            f'<span style="color:{COR["texto_3"]};font-size:11px">ⓘ passe o mouse para ver por imóvel</span></div>',
+            unsafe_allow_html=True,
         )
-        if financ:
-            st.caption(f"⚡ Além disso: {_brl(financ)} de financiamento imobiliário a contratar na entrega.")
 
         # Evolução da carteira de investimentos
         evo = evolucao_patrimonio_liquido()

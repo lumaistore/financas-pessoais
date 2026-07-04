@@ -284,47 +284,49 @@ def definir_valor_imovel(compromisso_id: int, valor: Optional[float]) -> None:
 
 @cache_leitura
 def resumo_imoveis() -> dict:
-    """Para o Painel de patrimônio:
-    - total_pago: soma do que JÁ FOI PAGO nos imóveis (SP + Carneiros),
-      sem juros/parcelas futuras.
-    - sp_falta: quanto falta em parcelas nos imóveis de SP (até a entrega,
-      exclui o balão de financiamento).
-    - carneiros_falta: valor do imóvel de Carneiros − o que já foi pago
-      (sem juros). Requer o valor do imóvel cadastrado.
+    """Para o Painel de patrimônio (tudo sem juros — só principal):
+    - total_pago: o que JÁ FOI PAGO nos imóveis (SP + Carneiros).
+    - saldo_a_pagar: quanto ainda falta pagar no total dos imóveis.
+    - detalhe: por imóvel {nome, parcelas, financiamento, carneiros, total}.
+      Para SP, total = parcelas até a entrega + balão de financiamento (principal).
+      Para Carneiros, total = valor do imóvel − o que já foi pago.
     """
-    total_pago = sp_falta = carn_falta = 0.0
-    carn_sem_valor = False
+    total_pago = 0.0
+    detalhe = []
     with get_session() as s:
         comps = s.scalars(
             select(Compromisso).where(Compromisso.ativo.is_(True))
         ).all()
-        ids = [(c.id, c.tipo, c.nome, c.valor_pago, c.valor_total_plano,
-                c.valor_financiamento, _eh_imovel_compromisso(c)) for c in comps]
+        rows = [(c.id, c.tipo, c.nome, c.valor_pago, c.valor_total_plano,
+                 c.valor_financiamento, _eh_imovel_compromisso(c)) for c in comps]
 
-    for cid, tipo, nome, valor_pago, total_plano, financ, eh_imovel in ids:
+    for cid, tipo, nome, valor_pago, total_plano, financ, eh_imovel in rows:
         if not eh_imovel:
             continue
         pago = (valor_pago or 0.0) + total_pago_compromisso(cid)
         total_pago += pago
         if tipo == "imovel":
-            # Falta em parcelas até a entrega (exclui o balão de financiamento).
-            sp_falta += max(0.0, (total_plano or 0.0) - (financ or 0.0) - pago)
+            parcelas = max(0.0, (total_plano or 0.0) - (financ or 0.0) - pago)
+            balao = financ or 0.0
+            detalhe.append({
+                "nome": nome, "parcelas": parcelas, "financiamento": balao,
+                "carneiros": False, "total": parcelas + balao,
+            })
         else:
-            # Carneiros: valor do imóvel (sem juros) − pago.
             valor_imovel = total_plano or (
-                VALOR_IMOVEL_CARNEIROS if "carneiros" in (nome or "").lower() else None
+                VALOR_IMOVEL_CARNEIROS if "carneiros" in (nome or "").lower() else 0.0
             )
-            if valor_imovel:
-                carn_falta += max(0.0, valor_imovel - pago)
-            else:
-                carn_sem_valor = True
+            falta = max(0.0, valor_imovel - pago)
+            detalhe.append({
+                "nome": nome, "parcelas": falta, "financiamento": 0.0,
+                "carneiros": True, "total": falta,
+            })
 
+    detalhe.sort(key=lambda d: d["total"], reverse=True)
     return {
         "total_pago": total_pago,
-        "sp_falta": sp_falta,
-        "carneiros_falta": carn_falta,
-        "carneiros_sem_valor": carn_sem_valor,
-        "falta_total": sp_falta + carn_falta,
+        "detalhe": detalhe,
+        "saldo_a_pagar": sum(d["total"] for d in detalhe),
     }
 
 
