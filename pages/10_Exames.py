@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
-from core.ui import aplicar_estilo
+from core.ui import aplicar_estilo, cabecalho_pagina
 from services.exames import (
     CATEGORIAS,
     DISCLAIMER,
@@ -30,7 +30,7 @@ from services.perfil import paciente_padrao
 init_db()
 aplicar_estilo()
 
-st.title("Exames Médicos")
+cabecalho_pagina("Exames Médicos", icone="🧪")
 st.caption(
     "Guarde aqui os laudos de exames e peça uma leitura educativa em texto. "
     "Útil para entender o que o exame mostra e levar dúvidas certas ao médico."

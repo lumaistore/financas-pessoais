@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
-from core.ui import aplicar_estilo
+from core.ui import aplicar_estilo, cabecalho_pagina
 from services.cartao import (
     adicionar_categoria,
     atualizar_mes_referencia,
@@ -33,7 +33,7 @@ from services.cartao import (
 init_db()
 aplicar_estilo()
 
-st.title("Faturas de Cartão")
+cabecalho_pagina("Faturas de Cartão", icone="🧾")
 st.caption("Envie o PDF da fatura. O sistema extrai as transações e sugere categorias para você revisar.")
 
 # ---------------------------------------------------------------------------

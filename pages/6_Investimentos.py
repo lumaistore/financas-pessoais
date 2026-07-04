@@ -12,7 +12,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
-from core.ui import aplicar_estilo
+from core.ui import aplicar_estilo, cabecalho_pagina
 from services.investimentos import (
     CLASSES,
     MOEDAS,
@@ -35,7 +35,7 @@ INDEXADORES = ["", "CDI", "PREFIXADO", "IPCA"]
 init_db()
 aplicar_estilo()
 
-st.title("Investimentos")
+cabecalho_pagina("Investimentos", icone="📈")
 st.caption(
     "Sua carteira é guardada como fotos (snapshots) por data. Confira a posição "
     "abaixo, ajuste o que precisar e salve. Crie um novo snapshot quando quiser "

@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
-from core.ui import aplicar_estilo
+from core.ui import aplicar_estilo, cabecalho_pagina
 from services.lucros import (
     adicionar_retirada,
     arquivo_assinado,
@@ -27,7 +27,7 @@ from services.lucros import (
 init_db()
 aplicar_estilo()
 
-st.title("Retirada de Lucros")
+cabecalho_pagina("Retirada de Lucros", icone="🧮")
 st.caption(
     "Gere o recibo preenchido, baixe para assinar e devolva a versão assinada. "
     "Acompanhe por mês o que já foi feito e o que falta."

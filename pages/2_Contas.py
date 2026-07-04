@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
-from core.ui import aplicar_estilo
+from core.ui import aplicar_estilo, cabecalho_pagina
 from services.contas import (
     TIPOS_CONTA,
     adicionar_conta,
@@ -17,7 +17,7 @@ from services.contas import (
 init_db()
 aplicar_estilo()
 
-st.title("🏦 Contas financeiras")
+cabecalho_pagina("Contas financeiras", icone="🏦")
 st.caption(
     "Cadastre suas contas bancárias e de aplicação. O sistema usa isso pra "
     "**identificar transferências entre você mesmo** (Itaú ↔ C6) e "

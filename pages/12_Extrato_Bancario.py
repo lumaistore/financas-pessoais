@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
-from core.ui import aplicar_estilo
+from core.ui import aplicar_estilo, cabecalho_pagina
 from services.cartao import listar_categorias
 from services.contas import listar_contas
 from services.movimentacoes import FORMAS, TIPOS
@@ -21,7 +21,7 @@ from services.extrato import (
 init_db()
 aplicar_estilo()
 
-st.title("Importar extrato bancário")
+cabecalho_pagina("Importar extrato bancário", icone="🏦")
 st.caption(
     "Suba o extrato do banco (PDF/OFX/Excel). O sistema **filtra por mês** — "
     "assim, mesmo que o extrato traga vários meses, você importa só o que quer."

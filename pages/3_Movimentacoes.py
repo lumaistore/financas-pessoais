@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core.db import init_db
-from core.ui import aplicar_estilo
+from core.ui import COR, aplicar_estilo, cabecalho_pagina, kpi
 from services.cartao import listar_categorias
 from services.contas import listar_contas
 from services.movimentacoes import (
@@ -32,10 +32,10 @@ from services.movimentacoes import (
 init_db()
 aplicar_estilo()
 
-st.title("💰 Movimentações")
-st.caption(
-    "Todas as entradas e saídas do mês, organizadas por tipo. "
-    "Transferências entre suas contas e aplicações **não** entram no fluxo real."
+cabecalho_pagina(
+    "Movimentações",
+    "Todas as entradas e saídas do mês. Transferências entre suas contas não contam.",
+    "💰",
 )
 
 # ---------------------------------------------------------------------------
@@ -149,15 +149,17 @@ def _brl(v: float) -> str:
     return f"R$ {v:,.2f}"
 
 
-r1c1, r1c2 = st.columns(2)
-r1c1.metric("Recebido", _brl(r["receitas"]))
-r1c2.metric("Gasto (real)", _brl(r["despesas"]),
-             help="Exclui LUMAI e transferências.")
-r2c1, r2c2 = st.columns(2)
-r2c1.metric("Aplicado", _brl(r["aplicacoes"]),
-             help="Enviado para contas de aplicação (BTG etc.).")
-r2c2.metric("Saldo do mês", _brl(r["saldo"]),
-             help="Recebido − Gasto − Aplicado + Resgates.")
+k1, k2 = st.columns(2)
+with k1:
+    kpi("Recebido", _brl(r["receitas"]), icone="💵")
+with k2:
+    kpi("Gasto real", _brl(r["despesas"]), "exclui LUMAI", "neutro", icone="💸")
+k3, k4 = st.columns(2)
+with k3:
+    kpi("Aplicado", _brl(r["aplicacoes"]), "para investimentos", "accent", icone="📈")
+with k4:
+    cor_saldo = COR["sucesso"] if r["saldo"] >= 0 else COR["perigo"]
+    kpi("Saldo do mês", _brl(r["saldo"]), icone="💰", cor_valor=cor_saldo)
 
 lumai_pend = total_lumai_a_reembolsar(mes_ref)
 if lumai_pend:

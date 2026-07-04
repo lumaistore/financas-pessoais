@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
-from core.ui import aplicar_estilo
+from core.ui import aplicar_estilo, cabecalho_pagina
 from services.despesas_medicas import (
     TIPOS,
     adicionar,
@@ -28,7 +28,7 @@ from services.perfil import get_perfil, lista_pacientes, paciente_padrao, salvar
 init_db()
 aplicar_estilo()
 
-st.title("Despesas Médicas")
+cabecalho_pagina("Despesas Médicas", icone="🩺")
 st.caption(
     "Junte os comprovantes de saúde do ano para o Imposto de Renda. "
     "O sistema soma só o **valor dedutível** (pago − reembolsado pelo plano)."

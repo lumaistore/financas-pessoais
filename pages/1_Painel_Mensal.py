@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
-from core.ui import aplicar_estilo
+from core.ui import COR, aplicar_estilo, cabecalho_pagina, kpi
 from services.backup import criar_backup, listar_backups
 from services.cartao import reembolso_lumai_por_fatura
 from services.compromissos import (
@@ -41,8 +41,8 @@ from services.painel import (
 init_db()
 aplicar_estilo()
 
-st.title("📊 Painel Mensal")
-st.caption("Visão consolidada e inteligente das suas finanças.")
+cabecalho_pagina("Painel Mensal",
+                 "Visão consolidada e inteligente das suas finanças.", "📊")
 
 # ---------------------------------------------------------------------------
 # Seletor de mês (dropdown pt-BR + navegação)
@@ -102,14 +102,6 @@ def _brl(v: float) -> str:
     return f"R$ {v:,.2f}"
 
 
-def _delta_str(pct: float, invertido: bool = False) -> str:
-    """Formata delta em % com seta. `invertido=True` para gastos (subir é ruim)."""
-    if pct is None:
-        return "—"
-    seta = "↑" if pct > 0 else ("↓" if pct < 0 else "")
-    return f"{seta} {abs(pct):.1f}% vs mês anterior"
-
-
 def _localizar_pagina(nome_chave: str) -> str:
     """Acha o arquivo da página cujo nome contém a chave (para page_link)."""
     import os
@@ -120,46 +112,44 @@ def _localizar_pagina(nome_chave: str) -> str:
     return "1_Painel_Mensal.py"
 
 
+def _delta_pill(pct, higher_good: bool = True):
+    """Retorna (texto, tom) para uma pill de variação vs mês anterior."""
+    if pct is None:
+        return ("sem base anterior", "neutro")
+    seta = "↑" if pct > 0 else ("↓" if pct < 0 else "→")
+    bom = (pct > 0) if higher_good else (pct < 0)
+    tom = "sucesso" if bom else ("perigo" if pct != 0 else "neutro")
+    return (f"{seta} {abs(pct):.0f}% vs mês ant.", tom)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # SEÇÃO 1 — 🎯 Saúde do Mês
 # ═══════════════════════════════════════════════════════════════════════
-st.markdown(f"### 🎯 Saúde do Mês — {_rotulo(mes_ref)}")
+st.markdown(f"### 🎯 Saúde do mês — {_rotulo(mes_ref)}")
 
 f = fluxo_com_delta(mes_ref)
 
-with st.container(border=True):
-    c1, c2, c3 = st.columns(3)
-    c1.metric(
-        "💵 Recebido", _brl(f["receitas"]),
-        _delta_str(f["receitas_delta"]),
-        help="Receitas do mês (salário, LUMAI, resgates classificados como receita).",
-    )
-    c2.metric(
-        "💸 Gasto real", _brl(f["gasto_real"]),
-        _delta_str(f["gasto_delta"]),
-        delta_color="inverse",  # subir gasto = ruim (vermelho)
-        help=(f"Cartão {_brl(f['gasto_cartao'])} + despesas "
-              f"{_brl(f['gasto_movimentacoes'])}. Exclui LUMAI e transferências."),
-    )
-    c3.metric(
-        "📈 Aplicado", _brl(f["aplicacoes"]),
-        _delta_str(f["aplicacoes_delta"]),
-        help="Enviado para investimentos (BTG etc).",
-    )
+c1, c2, c3 = st.columns(3)
+with c1:
+    d, t = _delta_pill(f["receitas_delta"], higher_good=True)
+    kpi("Recebido", _brl(f["receitas"]), d, t, icone="💵")
+with c2:
+    d, t = _delta_pill(f["gasto_delta"], higher_good=False)
+    kpi("Gasto real", _brl(f["gasto_real"]), d, t, icone="💸")
+with c3:
+    d, t = _delta_pill(f["aplicacoes_delta"], higher_good=True)
+    kpi("Aplicado", _brl(f["aplicacoes"]), d, t, icone="📈")
 
-    c4, c5 = st.columns(2)
-    cor_sobra = "normal" if f["sobra"] >= 0 else "inverse"
-    c4.metric(
-        "💰 Sobra do mês", _brl(f["sobra"]),
-        _delta_str(f["sobra_delta"]),
-        delta_color=cor_sobra,
-        help="Recebido − Gasto − Parcelas − Aplicações + Resgates.",
-    )
-    c5.metric(
-        "📊 Taxa de poupança", f"{f['taxa_poupanca']:.1f}%",
-        _delta_str(f["taxa_poupanca_delta"]),
-        help="(Aplicado + Sobra) ÷ Recebido. Meta saudável: 20%+.",
-    )
+c4, c5 = st.columns(2)
+with c4:
+    d, t = _delta_pill(f["sobra_delta"], higher_good=True)
+    cor = COR["sucesso"] if f["sobra"] >= 0 else COR["perigo"]
+    kpi("Sobra do mês", _brl(f["sobra"]), d, t, icone="💰", cor_valor=cor)
+with c5:
+    d, t = _delta_pill(f["taxa_poupanca_delta"], higher_good=True)
+    meta = "meta 20%+" if f["taxa_poupanca"] >= 20 else "abaixo da meta"
+    tom_meta = "sucesso" if f["taxa_poupanca"] >= 20 else "aviso"
+    kpi("Taxa de poupança", f"{f['taxa_poupanca']:.0f}%", meta, tom_meta, icone="📊")
 
 # ═══════════════════════════════════════════════════════════════════════
 # SEÇÃO 2 — 📊 Waterfall do Fluxo

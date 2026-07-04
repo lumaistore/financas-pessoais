@@ -257,6 +257,29 @@ def secao(titulo: str, icone: str = "") -> None:
     )
 
 
+def kpi(label: str, valor: str, delta: str = "", delta_tom: str = "neutro",
+        icone: str = "", cor_valor: str = "") -> None:
+    """Card de KPI premium: ícone+label, número grande, pill de variação.
+    Renderizado direto (use dentro de st.columns)."""
+    ico = f'<span style="font-size:15px">{icone}</span> ' if icone else ""
+    delta_html = (f'<div style="margin-top:8px">{pill(delta, delta_tom)}</div>'
+                  if delta else "")
+    cor = cor_valor or COR["texto"]
+    st.markdown(
+        f"""
+        <div style="background:{COR['superficie']};border:0.5px solid {COR['borda']};
+                    border-radius:14px;padding:15px 17px;min-height:112px">
+          <div style="display:flex;align-items:center;gap:5px;color:{COR['texto_3']};
+                      font-size:12.5px;font-weight:500;margin-bottom:8px">{ico}{label}</div>
+          <div style="font-size:25px;font-weight:600;letter-spacing:-0.03em;
+                      color:{cor};line-height:1.1">{valor}</div>
+          {delta_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def pill(texto: str, tom: str = "neutro") -> str:
     """Retorna HTML de uma pill colorida. tom: sucesso/perigo/aviso/accent/neutro."""
     mapa = {

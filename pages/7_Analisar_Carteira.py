@@ -9,7 +9,7 @@ from datetime import date
 import streamlit as st
 
 from core.db import init_db
-from core.ui import aplicar_estilo
+from core.ui import aplicar_estilo, cabecalho_pagina
 from services.analise_ia import (
     DISCLAIMER,
     NOME_VARIAVEL,
@@ -23,7 +23,7 @@ from services.analise_ia import (
 init_db()
 aplicar_estilo()
 
-st.title("Analisar minha carteira")
+cabecalho_pagina("Analisar minha carteira", icone="🔍")
 st.caption(
     "Uma leitura educativa das suas finanças feita por IA. Só números agregados "
     "saem da máquina — nada de senhas, CPF, números de conta ou de contrato."
