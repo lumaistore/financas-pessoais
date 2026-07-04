@@ -136,6 +136,31 @@ def detectar_conta(descricao: str,
 
 
 @invalida_cache
+def aplicar_pix_conhecidos(mapa: dict) -> int:
+    """Acrescenta chaves PIX aos identificadores das contas correspondentes
+    (casa pelo banco/apelido). Idempotente. `mapa`: {'C6': 'chave', ...}.
+
+    Chamado com as chaves fornecidas pelo usuário na tela (ficam só no banco)."""
+    n = 0
+    with get_session() as s:
+        contas = s.scalars(select(ContaFinanceira)).all()
+        for c in contas:
+            alvo = f"{c.banco or ''} {c.apelido or ''}".lower()
+            for nome_banco, chave in mapa.items():
+                chave = (chave or "").strip()
+                if not chave:
+                    continue
+                if nome_banco.lower() in alvo:
+                    ids = (c.identificadores or "").strip()
+                    partes = [p.strip() for p in ids.split(",") if p.strip()]
+                    if chave not in partes:
+                        partes.append(chave)
+                        c.identificadores = ",".join(partes)
+                        n += 1
+    return n
+
+
+@invalida_cache
 def semear_contas_padrao() -> int:
     """Cria as contas básicas do usuário se ainda não existirem (idempotente).
     Ajuda no primeiro uso; usuário pode editar/excluir depois."""

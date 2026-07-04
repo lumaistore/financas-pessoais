@@ -194,8 +194,12 @@ c1.metric("Serão importados", f"{marcados} lançamento(s)", f"R$ {total_marcado
 with c2:
     st.write("")
     st.write("")
+    _falta_conta = bool(contas) and conta_origem_id is None
+    if _falta_conta:
+        st.info("👆 Selecione a **conta de origem** no topo para vincular estas "
+                "movimentações à conta (preenche a 'Movimentação por conta' no Painel).")
     if st.button("📥 Importar como movimentações", type="primary",
-                 disabled=marcados == 0):
+                 disabled=marcados == 0 or _falta_conta):
         with st.spinner("Importando..."):
             origem = f"extrato:{extrato.banco}:{mes_escolhido}"
             n = importar(edit.to_dict("records"),

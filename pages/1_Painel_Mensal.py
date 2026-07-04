@@ -227,10 +227,17 @@ with st.expander(f"🔍 Auditar movimentações de {_rotulo(mes_ref)} (editar, r
                                 "aplicacao": "📈 Aplicações", "resgate": "↩️ Resgates"}[x],
     )
     _movs = listar(mes_referencia=mes_ref, tipos=[_tipo_audit])
+    from services.contas import listar_contas as _listar_contas_audit
+    _contas_audit = _listar_contas_audit()
+    _id2ap = {c["id"]: c["apelido"] for c in _contas_audit}
+    _ap2id = {c["apelido"]: c["id"] for c in _contas_audit}
+    _opc_conta = ["(nenhuma)"] + [c["apelido"] for c in _contas_audit]
+
     if _movs:
         _base = pd.DataFrame([{
             "id": m["id"], "data": m["data"], "descricao": m["descricao"],
             "valor": float(m["valor"]), "categoria": m["categoria"],
+            "conta": _id2ap.get(m.get("conta_id"), "(nenhuma)"),
             "lumai": bool(m["lumai"]), "origem": m.get("origem") or "",
         } for m in _movs])
     else:
@@ -240,6 +247,7 @@ with st.expander(f"🔍 Auditar movimentações de {_rotulo(mes_ref)} (editar, r
             "descricao": pd.Series(dtype="object"),
             "valor": pd.Series(dtype="float"),
             "categoria": pd.Series(dtype="object"),
+            "conta": pd.Series(dtype="object"),
             "lumai": pd.Series(dtype="bool"),
             "origem": pd.Series(dtype="object"),
         })
@@ -253,6 +261,9 @@ with st.expander(f"🔍 Auditar movimentações de {_rotulo(mes_ref)} (editar, r
             "descricao": st.column_config.TextColumn("Descrição", width="large"),
             "valor": st.column_config.NumberColumn("Valor (R$)", format="%.2f", min_value=0.0),
             "categoria": st.column_config.TextColumn("Categoria"),
+            "conta": st.column_config.SelectboxColumn(
+                "Conta", options=_opc_conta,
+                help="Vincule à conta bancária (preenche a 'Movimentação por conta')."),
             "lumai": st.column_config.CheckboxColumn("LUMAI"),
             "origem": st.column_config.TextColumn("Origem", disabled=True),
         },
@@ -289,16 +300,20 @@ with st.expander(f"🔍 Auditar movimentações de {_rotulo(mes_ref)} (editar, r
                 _dt = _data_padrao
             _cat = str(_row.get("categoria") or "").strip() or None
             _lumai = bool(_row.get("lumai"))
+            _conta_ap = _row.get("conta")
+            _conta_id = (_ap2id.get(_conta_ap)
+                         if _conta_ap and _conta_ap != "(nenhuma)" else None)
             if _tem_id:
                 _rid = int(_rid)
                 _vistos.add(_rid)
                 atualizar(_rid, data=_dt, descricao=_desc, valor=float(_valor),
-                          tipo=_tipo_audit, categoria=_cat, lumai=_lumai)
+                          tipo=_tipo_audit, categoria=_cat, lumai=_lumai,
+                          conta_id=_conta_id)
                 _n_edit += 1
             else:
                 adicionar(data_=_dt, descricao=_desc, valor=float(_valor),
                           tipo=_tipo_audit, categoria=_cat, lumai=_lumai,
-                          origem="auditoria")
+                          conta_id=_conta_id, origem="auditoria")
                 _n_add += 1
         for _rid in _orig_ids - _vistos:
             excluir(_rid)

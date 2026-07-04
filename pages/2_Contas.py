@@ -8,6 +8,7 @@ from core.ui import aplicar_estilo, cabecalho_pagina
 from services.contas import (
     TIPOS_CONTA,
     adicionar_conta,
+    aplicar_pix_conhecidos,
     atualizar_conta,
     excluir_conta,
     listar_contas,
@@ -40,6 +41,32 @@ if not contas:
             n = semear_contas_padrao()
             st.success(f"{n} conta(s) cadastrada(s). Ajuste os identificadores abaixo se precisar.")
             st.rerun()
+
+# --- Chaves PIX (para detecção de transferências) -------------------------
+if contas:
+    with st.expander("🔑 Chaves PIX das suas contas (melhora a detecção de transferências)"):
+        st.caption(
+            "Cole a chave PIX de cada conta. Quando um lançamento do extrato tiver "
+            "essa chave no texto, o sistema reconhece que foi transferência pra essa "
+            "conta (não conta como gasto). As chaves ficam **só no seu banco de dados**."
+        )
+        with st.form("pix_form"):
+            pc1, pc2, pc3 = st.columns(3)
+            with pc1:
+                pix_c6 = st.text_input("PIX C6", placeholder="telefone/CPF/e-mail/chave")
+            with pc2:
+                pix_itau = st.text_input("PIX Itaú", placeholder="telefone/CPF/e-mail/chave")
+            with pc3:
+                pix_btg = st.text_input("PIX BTG", placeholder="telefone/CPF/e-mail/chave")
+            if st.form_submit_button("Aplicar chaves PIX", type="primary"):
+                mapa = {"C6": pix_c6, "Itaú": pix_itau, "BTG": pix_btg}
+                mapa = {k: v for k, v in mapa.items() if v.strip()}
+                if not mapa:
+                    st.warning("Preencha ao menos uma chave.")
+                else:
+                    n = aplicar_pix_conhecidos(mapa)
+                    st.success(f"{n} chave(s) adicionada(s) aos identificadores das contas.")
+                    st.rerun()
 
 # --- Nova conta ------------------------------------------------------------
 with st.expander("➕ Adicionar conta", expanded=not contas):
