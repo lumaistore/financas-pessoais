@@ -215,44 +215,40 @@ with st.expander("➕ Adicionar movimentação"):
 # ---------------------------------------------------------------------------
 def _grafico_diario(movs: list, tipo_label: str, cor: str) -> go.Figure:
     """Gráfico de barras diário: soma por dia do mês, ignorando horários.
-    Eixo x = datas (uma barra por dia). Hover mostra o valor total do dia."""
+    Preenche todos os dias do mês (uma barra por dia) para virar uma
+    linha do tempo legível."""
     if not movs:
         return None
-    df = pd.DataFrame([{
-        "data": m["data"],
-        "descricao": m["descricao"],
-        "valor": m["valor"],
-    } for m in movs])
-    df["dia"] = pd.to_datetime(df["data"])
-    agrup = df.groupby(df["dia"].dt.date).agg(
-        total=("valor", "sum"),
-        n=("descricao", "count"),
-    ).reset_index()
-    agrup.columns = ["dia", "total", "n"]
-    agrup["dia_dt"] = pd.to_datetime(agrup["dia"])
+    df = pd.DataFrame([{"data": m["data"], "valor": m["valor"],
+                        "descricao": m["descricao"]} for m in movs])
+    df["dia"] = pd.to_datetime(df["data"]).dt.normalize()
+    serie = df.groupby("dia")["valor"].sum()
+    conta = df.groupby("dia")["descricao"].count()
+    if len(serie):
+        ini = serie.index.min().replace(day=1)
+        fim = ini + pd.offsets.MonthEnd(1)
+        todos_dias = pd.date_range(ini, fim, freq="D")
+        serie = serie.reindex(todos_dias, fill_value=0.0)
+        conta = conta.reindex(todos_dias, fill_value=0)
 
     fig = go.Figure(go.Bar(
-        x=agrup["dia_dt"],
-        y=agrup["total"],
+        x=serie.index,
+        y=serie.values,
         marker_color=cor,
-        text=[_brl(v) for v in agrup["total"]],
-        textposition="outside",
-        hovertemplate="<b>%{x|%d/%m/%Y}</b><br>"
-                      + tipo_label + ": %{y:,.2f}<br>"
-                      + "Lançamentos: %{customdata}<extra></extra>",
-        customdata=agrup["n"],
+        customdata=conta.values,
+        hovertemplate=("<b>%{x|%d/%m/%Y}</b><br>" + tipo_label
+                       + ": R$ %{y:,.2f}<br>Lançamentos: %{customdata}<extra></extra>"),
     ))
     fig.update_layout(
-        height=340,
-        margin=dict(l=30, r=20, t=20, b=40),
-        xaxis=dict(
-            title="",
-            tickformat="%d/%m",
-            dtick="D1",  # tick por dia
-        ),
-        yaxis=dict(title="R$"),
+        height=300,
+        margin=dict(l=30, r=20, t=10, b=30),
+        xaxis=dict(title="", type="date", tickformat="%d/%m",
+                   dtick=86400000 * 3, tickangle=0),  # tick a cada 3 dias
+        yaxis=dict(title="", tickprefix="R$ "),
         template="simple_white",
         showlegend=False,
+        bargap=0.25,
+        font=dict(family="Inter, sans-serif", size=12),
     )
     return fig
 
@@ -311,7 +307,7 @@ def _ranking_com_hover(movs: list, titulo: str) -> None:
         template="simple_white",
         showlegend=False,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # Tabela detalhada completa
     with st.expander(f"Ver todas as fontes ({len(agrup)} agrupadas)"):
@@ -361,7 +357,7 @@ with aba_rec:
         st.markdown("**📈 Evolução das entradas ao longo do mês** (por dia)")
         fig = _grafico_diario(receitas + resgates, "Entradas", "#2ca02c")
         if fig:
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
         # Ranking com hover
         _ranking_com_hover(receitas + resgates,
@@ -401,7 +397,7 @@ with aba_desp:
         st.markdown("**📈 Evolução dos gastos ao longo do mês** (por dia, excluindo LUMAI)")
         fig = _grafico_diario(despesas_sem_lumai, "Gastos", "#d62728")
         if fig:
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
         # Pizza por categoria
         st.markdown("**🥧 Gasto por categoria**")
@@ -418,7 +414,7 @@ with aba_desp:
             figp = px.pie(df_pie, values="total", names="categoria", hole=0.4)
             figp.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10),
                                 legend=dict(orientation="h", y=-0.1))
-            st.plotly_chart(figp, use_container_width=True)
+            st.plotly_chart(figp, use_container_width=True, config={"displayModeBar": False})
 
         # Ranking de destinos das despesas (para quem/onde você mais gasta)
         _ranking_com_hover(despesas_sem_lumai,
@@ -476,13 +472,13 @@ with aba_todas:
             )
             fig.update_layout(
                 height=340,
-                xaxis=dict(title="", tickformat="%d/%m", dtick="D1"),
+                xaxis=dict(title="", type="date", tickformat="%d/%m", dtick=86400000*3, tickangle=0),
                 yaxis=dict(title="R$"),
                 template="simple_white",
                 legend_title_text="",
                 margin=dict(l=30, r=20, t=20, b=40),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
         # Lista cronológica completa
         st.markdown("**📅 Lista cronológica completa**")
