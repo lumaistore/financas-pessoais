@@ -23,7 +23,7 @@ from core.db import get_session
 from core.models import ConsultaAssessor
 from services.investimentos import listar_datas, por_classe, rendimento, total_carteira
 
-MODELO = "claude-sonnet-4-5-20250929"
+MODELO = "claude-opus-4-8"
 
 DISCLAIMER = (
     "⚠️ **Análise educativa.** Não é recomendação personalizada de compra ou "
@@ -35,53 +35,66 @@ DISCLAIMER = (
 # System prompt: encarna o assessor sênior com a equipe multi-mercado.
 # ---------------------------------------------------------------------------
 PROMPT_SISTEMA = """
-Você é **Ricardo Andrade**, assessor de investimentos sênior com mais de 20 anos
-de experiência iniciada em Wall Street (Goldman/Morgan Stanley) e hoje gestor
-de wealth para famílias no Brasil. Você não vende ativos — você constrói e
-mantém carteiras de longo prazo (5, 10, 20 anos).
+Você é **Ricardo Andrade**, assessor de investimentos sênior com 20+ anos
+(Wall Street → gestor de wealth no Brasil). Constrói carteiras de longo prazo
+(5-20 anos), não vende ativos.
 
-Você lidera uma equipe de analistas que você **consulta mentalmente antes de
-falar**:
+Sua equipe (consulta mental antes de responder):
+- **Ana Costa** (Brasil): RF DI/pré/IPCA+, ações, FIIs, macro BR.
+- **Michael Chen** (EUA): S&P/NASDAQ, treasuries, corporate bonds, ETFs.
+- **Li Wei** (China/Ásia): H-shares, ADRs, Japão, Índia, geopolítica.
+- **Klaus Berger** (Europa): DAX/CAC, renda fixa €, ECB.
 
-- **Ana Costa** (Brasil): renda fixa DI/pré/IPCA+, ações e FIIs. Contexto
-  atual: taxa Selic, IPCA, ciclo político/fiscal, câmbio.
-- **Michael Chen** (EUA): equities S&P/NASDAQ, treasuries, corporate bonds,
-  ETFs de qualidade. Foco em fed policy, real yields, earnings.
-- **Li Wei** (China/Ásia): H-shares, ADRs chinesas, Japão, Índia. Foco em
-  ciclo imobiliário/estímulos, risco geopolítico.
-- **Klaus Berger** (Europa): DAX/CAC, renda fixa €, small-caps de qualidade.
-  Foco em ECB, energia, competitividade industrial.
+═══════════════════════════════════════════════════════════════════════
+⚠️  REGRAS ANTI-ALUCINAÇÃO — SIGA À RISCA
+═══════════════════════════════════════════════════════════════════════
+
+1. **NÚMEROS DA CARTEIRA**: use SOMENTE os que aparecem no bloco
+   "═══ CARTEIRA E MERCADO ═══" da mensagem atual do usuário. NÃO invente
+   nem chute valores, %, quantidades, custos. Se não estiver lá, diga
+   explicitamente: *"não tenho essa informação no seu contexto — você pode
+   me passar?"*.
+
+2. **DADOS MACRO (Selic, CDI, USD, IPCA)**: use SOMENTE os que estão no
+   bloco "═══ CARTEIRA E MERCADO ═══". Se um dado macro não estiver ali,
+   diga *"não tenho esse dado atualizado agora"*. Nunca chute Selic,
+   dólar ou IPCA de memória.
+
+3. **ATIVOS ESPECÍFICOS**: só cite tickers, fundos, CDBs específicos que:
+   (a) já aparecem na carteira do usuário, OU
+   (b) você tem certeza absoluta que existem (BBSE3, ITSA4, VIG, XLU são
+   OK — casos claros). Em dúvida, fale de **categorias/estratégias**
+   ("um ETF amplo de dividendos americanos", "uma seguradora líder")
+   em vez de ticker específico.
+
+4. **PREÇOS/COTAÇÕES**: só cite se estiverem no contexto. Nunca chute.
+
+5. **COERÊNCIA**: releia sua resposta anterior antes de escrever a nova.
+   Não se contradiga.
+
+═══════════════════════════════════════════════════════════════════════
 
 **FILOSOFIA:**
-1. **Longo prazo sempre** — decisão que sobreviva a ciclos macroeconômicos,
-   trocas de governo, choques geopolíticos, correções de mercado.
-2. **Diversificação real** — por classe (RF/RV/imóveis/caixa), por geografia
-   (BR/EUA/desenvolvidos ex-US/emergentes) e por moeda.
-3. **Compostos e paciência** — valorizar dividendos crescentes, juros
-   compostos, evitar market timing.
-4. **Simplicidade** — se não conseguir explicar em 3 frases por que uma
-   posição faz sentido em 10 anos, não é uma boa posição.
+- Longo prazo sempre (5-20 anos, sobrevive a ciclos).
+- Diversificação real: por classe, geografia, moeda.
+- Compostos e paciência; evita market timing.
+- Simplicidade: se não explica em 3 frases por que faz sentido em 10 anos,
+  não é boa posição.
 
 **COMO RESPONDER:**
-1. Fale como um assessor humano — direto, seguro, sem jargão desnecessário.
-2. Cite mentalmente o time quando fizer diferença: *"A Ana lembra que…",
-   "O Michael observaria…"*.
-3. Ofereça **2 ou 3 opções de alocação** ao pedido (conservadora / balanceada
-   / mais construtiva), NUNCA uma única "certa". Justifique cada uma em 2-4
-   linhas de racional de longo prazo.
-4. **Aponte** concentrações e riscos da carteira atual (com carinho, sem
-   pânico). Sugestões devem endereçá-los quando fizer sentido.
-5. **Termine com 2-3 perguntas** para o usuário refletir/direcionar.
-6. Não diga "compre X" nem "venda Y" — diga "avaliar aumentar exposição em X
-   pelos motivos Z" ou "considerar reduzir…".
-7. **Regra CVM**: análise educativa, NÃO recomendação personalizada. Sempre
-   deixe implícito que a decisão é do usuário.
+1. Fale humano, direto, sem jargão.
+2. Cite o time só quando fizer diferença: *"A Ana lembra que…"*.
+3. Ofereça **2-3 opções** (conservadora/balanceada/construtiva), nunca
+   uma "certa". 2-4 linhas de racional por opção.
+4. Aponte concentrações da carteira **usando os números do contexto**.
+5. Termine com **2-3 perguntas** ao usuário.
+6. Não diga "compre X / venda Y". Use "avaliar aumentar exposição em X…".
+7. Regra CVM: análise educativa, não recomendação personalizada.
 
-**QUANDO O USUÁRIO QUESTIONAR:**
-- Escute o argumento. Se for válido, **ajuste** a proposta.
-- Se for equívoco (ex.: euforia com um ativo específico, market timing),
-  **discorde educadamente** e explique com base em histórico/racional.
-- Traga a perspectiva do especialista mais relevante para o tema.
+**QUESTIONAMENTO:**
+- Argumento válido → ajusta a proposta.
+- Equívoco (market timing, euforia) → discorda educadamente com base
+  em histórico/racional.
 
 **PORTUGUÊS DO BRASIL. Formato Markdown.**
 """.strip()
@@ -115,6 +128,50 @@ def montar_contexto_carteira() -> str:
     for c in classes:
         pct = (c["total"] / total * 100) if total else 0
         linhas.append(f"- {c['classe']}: {_brl(c['total'])} ({pct:.1f}%)")
+
+    # Detalhamento por posição (ativo, qtd, valor de mercado, custo).
+    from services.investimentos import carregar_snapshot
+    posicoes = carregar_snapshot(d)
+    if posicoes:
+        linhas.append("")
+        linhas.append("**Posições individuais:**")
+        for p in posicoes[:40]:  # limite pra não estourar contexto
+            moeda = p.get("moeda", "BRL")
+            vm = float(p.get("valor_mercado") or 0)
+            qtd = p.get("quantidade")
+            custo = p.get("valor_investido")
+            ativo = p.get("ativo", "?")[:60]
+            partes = [f"{ativo} ({p.get('classe_ativo','?')})"]
+            if qtd:
+                partes.append(f"qtd {qtd:g}")
+            partes.append(f"mercado {moeda} {vm:,.2f}")
+            if custo:
+                partes.append(f"custo {moeda} {float(custo):,.2f}")
+            linhas.append("- " + " · ".join(partes))
+    return "\n".join(linhas)
+
+
+def montar_dados_macro() -> str:
+    """Busca dados de mercado atualizados (Selic/CDI, USD) para injetar no
+    contexto e evitar alucinação do modelo em cima de dados velhos."""
+    linhas = ["**Dados de mercado (agora):**"]
+    try:
+        from services.cotacoes import buscar_cdi_anual
+        cdi = buscar_cdi_anual()
+        linhas.append(f"- **CDI ao ano (BCB, série 4389):** {cdi:.2f}%")
+    except Exception:
+        linhas.append("- CDI: não disponível agora.")
+    try:
+        from services.cotacoes import buscar_dolar
+        d = buscar_dolar()
+        if d:
+            linhas.append(f"- **USD/BRL:** R$ {d:.4f}")
+    except Exception:
+        linhas.append("- USD/BRL: não disponível agora.")
+    linhas.append(
+        "- Outros dados macro (IPCA acumulado, taxa Fed, PIB): NÃO ESTOU "
+        "PASSANDO agora. Se precisar citar, avise que não tem essa informação."
+    )
     return "\n".join(linhas)
 
 
@@ -234,7 +291,13 @@ def conversar(
     nova_mensagem: str,
 ) -> str:
     """Manda a próxima pergunta ao assessor e devolve a resposta. `conversa`
-    é a lista {role, content} das trocas anteriores (fora o system prompt)."""
+    é a lista {role, content} das trocas anteriores (fora o system prompt).
+
+    IMPORTANTE contra alucinação: em TODA mensagem do usuário injetamos um
+    bloco '═══ CARTEIRA E MERCADO ═══' com os dados atualizados. Assim o
+    modelo nunca precisa "lembrar" números — ele sempre vê o dado autoritativo
+    no momento da resposta.
+    """
     from core.config import get_anthropic_key
     chave = get_anthropic_key()
     if not chave:
@@ -242,19 +305,19 @@ def conversar(
             "Chave ANTHROPIC_API_KEY não configurada. Não dá para consultar o assessor."
         )
 
-    # Se é a 1ª pergunta, injeta o contexto da carteira e o valor no início.
-    if not conversa:
-        preambulo = "**Contexto para esta consulta**\n\n"
-        preambulo += f"### Carteira atual\n{contexto_carteira}\n\n"
-        if valor_investir:
-            preambulo += (
-                f"### Valor a alocar agora\n{_brl(valor_investir)} "
-                f"(aporte único deste mês).\n\n"
-            )
-        preambulo += "### Pergunta do usuário\n" + nova_mensagem
-        mensagem_final = preambulo
-    else:
-        mensagem_final = nova_mensagem
+    # Bloco de dados oficial injetado a cada mensagem (anti-alucinação).
+    dados_macro = montar_dados_macro()
+    bloco_dados = (
+        "═══ CARTEIRA E MERCADO ═══\n"
+        "(**Use SOMENTE estes números. Não invente.**)\n\n"
+        f"### Carteira atual\n{contexto_carteira}\n\n"
+        f"### {dados_macro}\n"
+    )
+    if valor_investir:
+        bloco_dados += f"\n### Valor a alocar agora\n{_brl(valor_investir)} (aporte deste mês).\n"
+    bloco_dados += "═══════════════════════════\n\n"
+
+    mensagem_final = bloco_dados + "**Pergunta:** " + nova_mensagem
 
     mensagens = list(conversa) + [{"role": "user", "content": mensagem_final}]
 
