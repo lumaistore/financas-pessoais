@@ -9,6 +9,7 @@ from datetime import date
 import streamlit as st
 
 from core.db import init_db
+from core.ui import aplicar_estilo
 from services.analise_ia import (
     DISCLAIMER,
     NOME_VARIAVEL,
@@ -20,6 +21,7 @@ from services.analise_ia import (
 )
 
 init_db()
+aplicar_estilo()
 
 st.title("Analisar minha carteira")
 st.caption(

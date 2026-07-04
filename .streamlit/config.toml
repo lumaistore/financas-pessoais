@@ -1,0 +1,8 @@
+# Tema "Fintech Premium" — índigo + verde, claro.
+# Cores base; o restante do sistema de design vem de core/ui.py (CSS).
+[theme]
+primaryColor = "#4F46E5"
+backgroundColor = "#FBFBFD"
+secondaryBackgroundColor = "#F4F4F7"
+textColor = "#1A1A2E"
+font = "sans serif"

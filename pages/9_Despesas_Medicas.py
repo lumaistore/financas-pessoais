@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
+from core.ui import aplicar_estilo
 from services.despesas_medicas import (
     TIPOS,
     adicionar,
@@ -25,6 +26,7 @@ from services.leitor_nf import ler_nf
 from services.perfil import get_perfil, lista_pacientes, paciente_padrao, salvar_perfil
 
 init_db()
+aplicar_estilo()
 
 st.title("Despesas Médicas")
 st.caption(

@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
+from core.ui import aplicar_estilo
 from services.lucros import (
     adicionar_retirada,
     arquivo_assinado,
@@ -24,6 +25,7 @@ from services.lucros import (
 )
 
 init_db()
+aplicar_estilo()
 
 st.title("Retirada de Lucros")
 st.caption(

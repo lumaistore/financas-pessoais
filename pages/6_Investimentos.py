@@ -12,6 +12,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
+from core.ui import aplicar_estilo
 from services.investimentos import (
     CLASSES,
     MOEDAS,
@@ -32,6 +33,7 @@ from services.cotacoes import atualizar_cotacoes, buscar_dolar, evolucao_intradi
 INDEXADORES = ["", "CDI", "PREFIXADO", "IPCA"]
 
 init_db()
+aplicar_estilo()
 
 st.title("Investimentos")
 st.caption(

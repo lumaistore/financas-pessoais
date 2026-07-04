@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
+from core.ui import aplicar_estilo
 from services.compromissos import (
     TIPOS,
     TIPOS_PAGAMENTO,
@@ -26,6 +27,7 @@ from services.compromissos import (
 )
 
 init_db()
+aplicar_estilo()
 
 st.title("Financiamentos e Imóveis")
 st.caption("Acompanhe saldo devedor, próximas parcelas e datas dos seus compromissos.")

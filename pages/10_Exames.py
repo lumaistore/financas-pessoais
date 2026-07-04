@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from core.db import init_db
+from core.ui import aplicar_estilo
 from services.exames import (
     CATEGORIAS,
     DISCLAIMER,
@@ -27,6 +28,7 @@ from services.exames import (
 from services.perfil import paciente_padrao
 
 init_db()
+aplicar_estilo()
 
 st.title("Exames Médicos")
 st.caption(

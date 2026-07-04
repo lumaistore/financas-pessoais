@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core.db import init_db
+from core.ui import aplicar_estilo
 from services.cartao import listar_categorias
 from services.contas import listar_contas
 from services.movimentacoes import (
@@ -29,6 +30,7 @@ from services.movimentacoes import (
 )
 
 init_db()
+aplicar_estilo()
 
 st.title("💰 Movimentações")
 st.caption(
