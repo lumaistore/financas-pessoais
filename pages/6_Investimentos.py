@@ -176,12 +176,19 @@ with st.expander("📤 Enviar prints e ler com IA", expanded=False):
         if not lidos:
             st.warning("Não consegui extrair proventos (verifique a chave da API ou a nitidez das imagens).")
         else:
+            # Preenche a cotação do dólar para proventos em USD.
+            tem_usd = any(p.get("moeda") == "USD" for p in lidos)
+            dolar = buscar_dolar() if tem_usd else None
+            for p in lidos:
+                p["cotacao"] = float(dolar or 5.0) if p.get("moeda") == "USD" else 1.0
             st.session_state["prov_lidos"] = lidos
             st.success(f"{len(lidos)} provento(s) lido(s). Confira abaixo e salve.")
 
     # Revisão dos proventos lidos (editável)
     if st.session_state.get("prov_lidos"):
         st.markdown("**Confira antes de salvar** (edite/remova o que precisar):")
+        st.caption("Para proventos em **USD**, ajuste a **cotação** se quiser (já preenchi com o dólar de hoje). "
+                   "O total é sempre convertido para reais.")
         df_prov = pd.DataFrame(st.session_state["prov_lidos"])
         edit_prov = st.data_editor(
             df_prov, num_rows="dynamic", use_container_width=True, hide_index=True,
@@ -191,11 +198,23 @@ with st.expander("📤 Enviar prints e ler com IA", expanded=False):
                 "ticker": st.column_config.TextColumn("Ticker"),
                 "tipo": st.column_config.SelectboxColumn(
                     "Tipo", options=["dividendo", "jcp", "rendimento", "amortizacao", "outro"]),
-                "valor": st.column_config.NumberColumn("Valor (R$)", format="%.2f", min_value=0.0),
+                "valor": st.column_config.NumberColumn("Valor (bruto)", format="%.2f", min_value=0.0),
+                "moeda": st.column_config.SelectboxColumn("Moeda", options=["BRL", "USD"]),
+                "cotacao": st.column_config.NumberColumn("Cotação USD→BRL", format="%.4f"),
+                "imposto": st.column_config.NumberColumn("Imposto retido", format="%.2f"),
             },
         )
-        _soma = float(edit_prov["valor"].fillna(0).sum()) if not edit_prov.empty else 0.0
-        st.caption(f"Total a salvar: **R\\$ {_soma:,.2f}** em {len(edit_prov)} provento(s).")
+        # Total em reais (converte USD).
+        _soma_brl = 0.0
+        for _, r in edit_prov.iterrows():
+            v = r.get("valor")
+            if pd.isna(v):
+                continue
+            if str(r.get("moeda") or "BRL").upper() == "USD":
+                _soma_brl += float(v) * float(r.get("cotacao") or 0.0)
+            else:
+                _soma_brl += float(v)
+        st.caption(f"Total a salvar: **R\\$ {_soma_brl:,.2f}** em {len(edit_prov)} provento(s).")
         if st.button("💾 Salvar proventos", type="primary"):
             itens = []
             for _, r in edit_prov.iterrows():
@@ -205,9 +224,14 @@ with st.expander("📤 Enviar prints e ler com IA", expanded=False):
                 v = r.get("valor")
                 tk = str(r.get("ticker") or "").strip().upper()
                 if d and tk and pd.notna(v) and float(v) > 0:
-                    itens.append({"data": d, "ticker": tk,
-                                  "tipo": str(r.get("tipo") or "dividendo"),
-                                  "valor": float(v)})
+                    _moeda = str(r.get("moeda") or "BRL").upper()
+                    itens.append({
+                        "data": d, "ticker": tk,
+                        "tipo": str(r.get("tipo") or "dividendo"),
+                        "valor": float(v), "moeda": _moeda,
+                        "cotacao": float(r.get("cotacao") or (1.0 if _moeda == "BRL" else 0.0)),
+                        "imposto": float(r.get("imposto") or 0.0) if pd.notna(r.get("imposto")) else 0.0,
+                    })
             n = registrar_proventos(itens)
             st.session_state.pop("prov_lidos", None)
             st.success(f"{n} provento(s) salvo(s) (duplicatas ignoradas).")
@@ -216,20 +240,24 @@ with st.expander("📤 Enviar prints e ler com IA", expanded=False):
 # Histórico de proventos
 _proventos = listar_proventos()
 if _proventos:
-    dfp = pd.DataFrame(_proventos)
-    dfp["data"] = dfp["data"].apply(lambda d: d.strftime("%d/%m/%Y"))
-    dfp_show = dfp[["data", "ticker", "tipo", "valor"]].copy()
-    dfp_show["valor"] = dfp_show["valor"].apply(lambda v: f"R$ {v:,.2f}")
-    dfp_show.columns = ["Data", "Ticker", "Tipo", "Valor"]
-    st.dataframe(dfp_show, use_container_width=True, hide_index=True)
+    def _orig(p):
+        simb = "US$" if p["moeda"] == "USD" else "R$"
+        return f"{simb} {p['valor']:,.2f}"
+
+    dfp = pd.DataFrame([{
+        "Data": p["data"].strftime("%d/%m/%Y"), "Ticker": p["ticker"],
+        "Tipo": p["tipo"], "Valor original": _orig(p),
+        "Em R$": f"R$ {p['valor_brl']:,.2f}",
+    } for p in _proventos])
+    st.dataframe(dfp, use_container_width=True, hide_index=True)
 
     tot_mes: dict = {}
     for p in _proventos:
-        tot_mes[p["mes_referencia"]] = tot_mes.get(p["mes_referencia"], 0.0) + p["valor"]
+        tot_mes[p["mes_referencia"]] = tot_mes.get(p["mes_referencia"], 0.0) + p["valor_brl"]
     resumo = " · ".join(f"{m}: R\\$ {v:,.2f}" for m, v in sorted(tot_mes.items(), reverse=True)[:6])
-    st.caption(f"💰 Proventos por mês — {resumo}")
+    st.caption(f"💰 Proventos por mês (em R$) — {resumo}")
 
-    op_prov = {f"{p['data'].strftime('%d/%m/%Y')} · {p['ticker']} · R$ {p['valor']:,.2f}": p["id"]
+    op_prov = {f"{p['data'].strftime('%d/%m/%Y')} · {p['ticker']} · R$ {p['valor_brl']:,.2f}": p["id"]
                for p in _proventos}
     epc1, epc2 = st.columns([3, 1])
     with epc1:

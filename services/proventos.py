@@ -35,16 +35,22 @@ _PROMPT_SISTEMA = (
 def _prompt_usuario(ano: int) -> str:
     return (
         "Analise a imagem do extrato e liste os proventos. Para cada um:\n"
-        "- data: use o cabeçalho de data (ex.: '30/Jun') acima do lançamento; "
-        f"o ano é {ano}. Formato AAAA-MM-DD.\n"
-        "- ticker: o código do ativo (ex.: CMIG4, BBAS3, HGCR11, BTLG11, SAPR4, "
-        "MCCI11, COPN11). Costuma ser o último código do texto.\n"
+        "- data: use o cabeçalho de data (ex.: '30/Jun' ou '25/06/2026') acima "
+        f"do lançamento; se faltar o ano, use {ano}. Formato AAAA-MM-DD.\n"
+        "- ticker: o código do ativo (ex.: CMIG4, BBAS3, HGCR11, XLU, VIG). "
+        "Em 'Dividendos de XLU', o ticker é XLU.\n"
         "- tipo: um de dividendo | jcp | rendimento | amortizacao "
         "('Juros S/ Capital' = jcp; 'Rendimentos' de FII = rendimento; "
         "'Amortizacao' = amortizacao; 'Dividendos' = dividendo).\n"
-        "- valor: número positivo em reais (ex.: 120.77).\n\n"
+        "- valor: número positivo (valor BRUTO do provento, ex.: 69.68).\n"
+        "- moeda: 'USD' se o valor usa '$' (ex.: Avenue); 'BRL' se usa 'R$'.\n"
+        "- imposto: se houver uma linha 'Imposto sobre dividendo' do MESMO ativo "
+        "e data logo ao lado, coloque o valor do imposto (positivo); senão null.\n\n"
+        "IMPORTANTE: as linhas de 'Imposto' NÃO são proventos por si só — some-as "
+        "ao campo 'imposto' do provento correspondente, não crie item separado.\n\n"
         'Responda APENAS um JSON array, sem markdown: '
-        '[{"data":"AAAA-MM-DD","ticker":"CMIG4","tipo":"jcp","valor":120.77}]. '
+        '[{"data":"AAAA-MM-DD","ticker":"XLU","tipo":"dividendo","valor":69.68,'
+        '"moeda":"USD","imposto":20.90}]. '
         "Se não houver proventos na imagem, responda []."
     )
 
@@ -89,10 +95,13 @@ def ler_imagens(arquivos: List[Tuple[bytes, str]], ano: int) -> List[dict]:
             valor = _parse_valor(it.get("valor"))
             ticker = (it.get("ticker") or "").strip().upper()
             if d and valor and ticker:
+                moeda = (it.get("moeda") or "BRL").strip().upper()
                 todos.append({
                     "data": d, "ticker": ticker,
                     "tipo": (it.get("tipo") or "dividendo").strip().lower(),
                     "valor": valor,
+                    "moeda": "USD" if moeda == "USD" else "BRL",
+                    "imposto": _parse_valor(it.get("imposto")) or 0.0,
                 })
     # Dedup dentro do lote (prints costumam ter sobreposição).
     vistos = set()
@@ -146,7 +155,7 @@ def _existe(s, d: date, ticker: str, valor: float) -> bool:
 @invalida_cache
 def registrar_proventos(itens: List[dict]) -> int:
     """Salva vários proventos, ignorando duplicatas (data+ticker+valor).
-    Cada item: {data, ticker, tipo, valor, observacao?}."""
+    Cada item: {data, ticker, tipo, valor, moeda?, cotacao?, imposto?}."""
     n = 0
     with get_session() as s:
         for it in itens:
@@ -157,13 +166,24 @@ def registrar_proventos(itens: List[dict]) -> int:
                 continue
             if _existe(s, d, ticker, valor):
                 continue
+            moeda = (it.get("moeda") or "BRL").upper()
+            cotacao = float(it.get("cotacao") or (1.0 if moeda == "BRL" else 0.0))
             s.add(Provento(
                 data=d, ticker=ticker,
                 tipo=(it.get("tipo") or "dividendo"),
-                valor=valor, observacao=(it.get("observacao") or None),
+                valor=valor, moeda=moeda, cotacao=cotacao,
+                imposto=float(it.get("imposto") or 0.0) or None,
+                observacao=(it.get("observacao") or None),
             ))
             n += 1
     return n
+
+
+def _valor_brl(p) -> float:
+    """Valor em reais: BRL usa valor direto; USD multiplica pela cotação."""
+    if (p.moeda or "BRL").upper() == "USD":
+        return float(p.valor) * float(p.cotacao or 0.0)
+    return float(p.valor)
 
 
 @cache_leitura
@@ -176,7 +196,9 @@ def listar_proventos(mes_referencia: Optional[str] = None) -> List[dict]:
                 continue
             out.append({
                 "id": p.id, "data": p.data, "ticker": p.ticker, "tipo": p.tipo,
-                "valor": p.valor, "observacao": p.observacao,
+                "valor": p.valor, "moeda": p.moeda or "BRL",
+                "cotacao": p.cotacao or 1.0, "imposto": p.imposto,
+                "valor_brl": _valor_brl(p), "observacao": p.observacao,
                 "mes_referencia": p.data.strftime("%Y-%m"),
             })
         return out
@@ -192,14 +214,14 @@ def excluir_provento(pid: int) -> None:
 
 @cache_leitura
 def total_proventos_mes(mes_referencia: str) -> float:
-    return sum(p["valor"] for p in listar_proventos(mes_referencia))
+    return sum(p["valor_brl"] for p in listar_proventos(mes_referencia))
 
 
 @cache_leitura
 def por_ticker_mes(mes_referencia: str) -> List[dict]:
     acc: dict = {}
     for p in listar_proventos(mes_referencia):
-        acc[p["ticker"]] = acc.get(p["ticker"], 0.0) + p["valor"]
+        acc[p["ticker"]] = acc.get(p["ticker"], 0.0) + p["valor_brl"]
     itens = [{"ticker": k, "total": v} for k, v in acc.items()]
     itens.sort(key=lambda x: x["total"], reverse=True)
     return itens

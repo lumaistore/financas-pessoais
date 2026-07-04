@@ -438,7 +438,10 @@ class Provento(Base):
     data: Mapped[date] = mapped_column(Date, nullable=False)
     ticker: Mapped[str] = mapped_column(String, nullable=False)
     tipo: Mapped[str] = mapped_column(String, default="dividendo")  # dividendo/jcp/rendimento/amortizacao
-    valor: Mapped[float] = mapped_column(Float, nullable=False)
+    valor: Mapped[float] = mapped_column(Float, nullable=False)  # na moeda original
+    moeda: Mapped[str] = mapped_column(String, default="BRL")     # BRL / USD
+    cotacao: Mapped[float] = mapped_column(Float, default=1.0)    # USD→BRL (1.0 se BRL)
+    imposto: Mapped[Optional[float]] = mapped_column(Float)       # imposto retido (moeda original)
     observacao: Mapped[Optional[str]] = mapped_column(String)
     movimentacao_id: Mapped[Optional[int]] = mapped_column(Integer)
     criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
