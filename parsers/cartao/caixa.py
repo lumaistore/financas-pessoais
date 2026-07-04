@@ -31,6 +31,38 @@ IGNORAR = (
 )
 
 
+def _melhor_data(linha: str, vencimento):
+    """Escolhe qual DD/MM da linha é a DATA da transação.
+
+    A linha pode conter outros DD/DD (parcela '03/08', pontos etc.). Preferimos
+    a data que cai DENTRO da janela da fatura: entre 0 e 2 meses antes do
+    vencimento. Isso evita ler a parcela como se fosse a data (o que jogava
+    lançamentos para meses errados, ex.: agosto)."""
+    candidatos = []
+    for m in RE_DATA.finditer(linha):
+        d, mo = int(m.group(1)), int(m.group(2))
+        if not (1 <= d <= 31 and 1 <= mo <= 12):
+            continue
+        ano = inferir_ano(mo, vencimento)
+        try:
+            dt = date(ano, mo, d)
+        except ValueError:
+            continue
+        candidatos.append((dt, m))
+    if not candidatos:
+        return None, None
+    if vencimento:
+        em_janela = []
+        for dt, m in candidatos:
+            dif = (vencimento.year - dt.year) * 12 + (vencimento.month - dt.month)
+            if 0 <= dif <= 2:  # transação até ~2 meses antes do vencimento
+                em_janela.append((dif, m.start(), dt, m))
+        if em_janela:
+            em_janela.sort(key=lambda x: (x[0], x[1]))  # mais perto do venc., depois posição
+            return em_janela[0][2], em_janela[0][3]
+    return candidatos[0]
+
+
 class ParserCaixa:
     banco = "Caixa"
 
@@ -54,9 +86,9 @@ class ParserCaixa:
 
         for linha in linhas:
             t = linha.strip()
-            mdata = RE_DATA.search(t)
+            dt, mdata = _melhor_data(t, fatura.vencimento)
             mval = RE_VALOR_FIM.search(t)
-            if not (mdata and mval):
+            if not (dt and mdata and mval):
                 continue
             descricao_full = t[mdata.end():mval.start()].strip()
             if not descricao_full or any(p in descricao_full.upper() for p in IGNORAR):
@@ -66,8 +98,7 @@ class ParserCaixa:
             if mval.group(2) == "C":  # crédito: pagamento/estorno — ignora como gasto
                 continue
 
-            dia, mes = int(mdata.group(1)), int(mdata.group(2))
-            ano = inferir_ano(mes, fatura.vencimento)
+            ano = dt.year
 
             parcela = None
             mp = RE_PARCELA.search(descricao_full)
@@ -78,7 +109,7 @@ class ParserCaixa:
             descricao = re.sub(r"\s{2,}", " ", descricao_full)
             fatura.transacoes.append(
                 TransacaoExtraida(
-                    data=date(ano, mes, dia),
+                    data=dt,
                     descricao=descricao,
                     valor=valor,
                     parcela=parcela,
