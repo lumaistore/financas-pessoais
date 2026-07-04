@@ -213,28 +213,28 @@ with st.expander("➕ Adicionar movimentação"):
 # ---------------------------------------------------------------------------
 # Helpers de gráfico
 # ---------------------------------------------------------------------------
-def _grafico_diario(movs: list, tipo_label: str, cor: str,
-                    mes_ref: str) -> go.Figure:
-    """Gráfico de barras diário do MÊS SELECIONADO (mes_ref = 'AAAA-MM').
-    O eixo x cobre todos os dias desse mês; lançamentos com data fora do mês
-    não aparecem como barra (mas continuam nos totais)."""
+def _grafico_diario(movs: list, tipo_label: str, cor: str, mes_ref: str):
+    """Gráfico de barras diário. Ancora o eixo no mês onde a MAIORIA das datas
+    está (robusto a datas erradas isoladas). Retorna (figura, 'AAAA-MM' do
+    mês mostrado) ou (None, None)."""
     if not movs:
-        return None
+        return None, None
     df = pd.DataFrame([{"data": m["data"], "valor": m["valor"],
                         "descricao": m["descricao"]} for m in movs])
     df["dia"] = pd.to_datetime(df["data"]).dt.normalize()
     serie = df.groupby("dia")["valor"].sum()
     conta = df.groupby("dia")["descricao"].count()
-    # Eixo ancorado no mês selecionado (não na data mais antiga dos dados).
-    try:
-        _ano, _mes = mes_ref.split("-")
-        ini = pd.Timestamp(int(_ano), int(_mes), 1)
-    except Exception:
-        ini = serie.index.min().replace(day=1)
+
+    # Mês predominante dos lançamentos (moda) — ignora outliers de data errada.
+    ym = df["dia"].dt.to_period("M")
+    modal = ym.mode()
+    periodo = modal.iloc[0] if len(modal) else pd.Period(mes_ref, "M")
+    ini = periodo.to_timestamp()
     fim = ini + pd.offsets.MonthEnd(1)
     todos_dias = pd.date_range(ini, fim, freq="D")
     serie = serie.reindex(todos_dias, fill_value=0.0)
     conta = conta.reindex(todos_dias, fill_value=0)
+    mes_grafico = str(periodo)  # 'AAAA-MM'
 
     fig = go.Figure(go.Bar(
         x=serie.index,
@@ -255,7 +255,7 @@ def _grafico_diario(movs: list, tipo_label: str, cor: str,
         bargap=0.25,
         font=dict(family="Inter, sans-serif", size=12),
     )
-    return fig
+    return fig, mes_grafico
 
 
 def _ranking_com_hover(movs: list, titulo: str) -> None:
@@ -360,7 +360,7 @@ with aba_rec:
     else:
         # Gráfico diário
         st.markdown("**📈 Evolução das entradas ao longo do mês** (por dia)")
-        fig = _grafico_diario(receitas + resgates, "Entradas", "#2ca02c", mes_ref)
+        fig, _mes_g = _grafico_diario(receitas + resgates, "Entradas", "#2ca02c", mes_ref)
         if fig:
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
@@ -399,19 +399,25 @@ with aba_desp:
         st.info("Sem despesas neste mês.")
     else:
         # Gráfico diário (só despesas suas)
-        st.markdown("**📈 Evolução dos gastos ao longo do mês** (por dia, excluindo LUMAI)")
-        fig = _grafico_diario(despesas_sem_lumai, "Gastos", "#d62728", mes_ref)
+        st.markdown("**📈 Evolução dos gastos ao longo do mês** (por data da compra)")
+        fig, _mes_g = _grafico_diario(despesas_sem_lumai, "Gastos", "#d62728", mes_ref)
         if fig:
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        # Aviso se há despesas com data fora do mês selecionado.
-        _fora = [d for d in despesas_sem_lumai if d["data"].strftime("%Y-%m") != mes_ref]
+        if _mes_g and _mes_g != mes_ref:
+            st.caption(
+                f"📅 O gráfico mostra as **datas de compra**, concentradas em "
+                f"**{_rotulo(_mes_g)}** (a fatura é referente a {_rotulo(mes_ref)} — "
+                f"compras de cartão costumam ser de semanas antes)."
+            )
+        # Datas isoladas fora do mês predominante (possível erro de importação).
+        _fora = [d for d in despesas_sem_lumai
+                 if d["data"].strftime("%Y-%m") not in (_mes_g, mes_ref)]
         if _fora:
             _soma_fora = sum(d["valor"] for d in _fora)
             st.caption(
-                f"⚠️ {len(_fora)} despesa(s) deste mês têm **data fora de {_rotulo(mes_ref)}** "
-                f"(somam R\\$ {_soma_fora:,.2f}) — por isso não aparecem no gráfico por dia. "
-                f"Isso costuma ser data errada de cartão/importação. Dá para corrigir na "
-                f"auditoria do Painel ou aqui na aba 'Todas'."
+                f"⚠️ {len(_fora)} despesa(s) com data em outro mês "
+                f"(somam R\\$ {_soma_fora:,.2f}) — pode ser data errada de importação. "
+                f"Corrija na aba 'Todas' ou na auditoria do Painel se precisar."
             )
 
         # Pizza por categoria
