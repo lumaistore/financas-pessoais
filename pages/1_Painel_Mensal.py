@@ -146,7 +146,13 @@ with c1:
     kpi("Recebido", _brl(f["receitas"]), d, t, icone="💵")
 with c2:
     d, t = _delta_pill(f["gasto_delta"], higher_good=False)
-    kpi("Gasto real", _brl(f["gasto_real"]), d, t, icone="💸")
+    _cats_mes = por_categoria(mes_ref, tipo="despesa", excluir_lumai=True)
+    if _cats_mes:
+        hover_gasto = "&#10;".join(f"{c['categoria']}: {_brl(c['total'])}"
+                                    for c in _cats_mes[:12])
+    else:
+        hover_gasto = "Sem gastos neste mês"
+    kpi("Gasto real", _brl(f["gasto_real"]), d, t, icone="💸", hover=hover_gasto)
 with c3:
     d, t = _delta_pill(f["aplicacoes_delta"], higher_good=True)
     kpi("Aplicado", _brl(f["aplicacoes"]), d, t, icone="📈")
@@ -164,7 +170,13 @@ with c4:
             pill_txt, pill_tom = f"↓ {abs(vs):.0f}% abaixo da média", "sucesso"
         else:
             pill_txt, pill_tom = "em linha com a média", "neutro"
-        kpi("Média de gasto (3m)", _brl(mg["media"]), pill_txt, pill_tom, icone="📉")
+        # Detalhamento para o hover: totais por mês + média por categoria.
+        linhas_h = [f"{_rotulo_curto(m)}: {_brl(v)}" for m, v in mg["detalhe_meses"]]
+        linhas_h.append("──── média por categoria ────")
+        linhas_h += [f"{c}: {_brl(v)}" for c, v in mg["por_categoria"][:10]]
+        hover_media = "&#10;".join(linhas_h)
+        kpi("Média de gasto (3m)", _brl(mg["media"]), pill_txt, pill_tom,
+            icone="📉", hover=hover_media)
     else:
         kpi("Média de gasto (3m)", "—", "sem histórico ainda", "neutro", icone="📉")
 with c5:

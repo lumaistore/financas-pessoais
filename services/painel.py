@@ -166,7 +166,7 @@ def media_gasto_meses(mes_ref: str, n: int = 3) -> Dict:
 
     Retorna {'media': float, 'meses_usados': [AAAA-MM], 'atual_vs_media_pct': float|None}.
     """
-    from services.movimentacoes import total_por_tipo
+    from services.movimentacoes import por_categoria, total_por_tipo
 
     def _gasto_mes(m: str) -> float:
         # Fonte única: movimentações (já incluem o cartão após o sync).
@@ -186,15 +186,29 @@ def media_gasto_meses(mes_ref: str, n: int = 3) -> Dict:
     # meses vazios sem dados).
     com_gasto = [(m, v) for m, v in zip(meses, valores) if v > 0]
     if not com_gasto:
-        return {"media": 0.0, "meses_usados": [], "atual_vs_media_pct": None}
+        return {"media": 0.0, "meses_usados": [], "atual_vs_media_pct": None,
+                "detalhe_meses": [], "por_categoria": []}
 
     media = sum(v for _, v in com_gasto) / len(com_gasto)
     atual = _gasto_mes(mes_ref)
     vs = ((atual - media) / media * 100) if media else None
+
+    # Média por categoria (para o detalhamento no hover).
+    acc: Dict[str, float] = {}
+    for m, _ in com_gasto:
+        for row in por_categoria(m, tipo="despesa", excluir_lumai=True):
+            acc[row["categoria"]] = acc.get(row["categoria"], 0.0) + row["total"]
+    por_cat = sorted(
+        ((c, t / len(com_gasto)) for c, t in acc.items()),
+        key=lambda x: x[1], reverse=True,
+    )
+
     return {
         "media": media,
         "meses_usados": [m for m, _ in com_gasto],
         "atual_vs_media_pct": vs,
+        "detalhe_meses": com_gasto,          # [(AAAA-MM, total)]
+        "por_categoria": por_cat,            # [(categoria, media_no_periodo)]
     }
 
 
