@@ -213,10 +213,11 @@ with st.expander("➕ Adicionar movimentação"):
 # ---------------------------------------------------------------------------
 # Helpers de gráfico
 # ---------------------------------------------------------------------------
-def _grafico_diario(movs: list, tipo_label: str, cor: str) -> go.Figure:
-    """Gráfico de barras diário: soma por dia do mês, ignorando horários.
-    Preenche todos os dias do mês (uma barra por dia) para virar uma
-    linha do tempo legível."""
+def _grafico_diario(movs: list, tipo_label: str, cor: str,
+                    mes_ref: str) -> go.Figure:
+    """Gráfico de barras diário do MÊS SELECIONADO (mes_ref = 'AAAA-MM').
+    O eixo x cobre todos os dias desse mês; lançamentos com data fora do mês
+    não aparecem como barra (mas continuam nos totais)."""
     if not movs:
         return None
     df = pd.DataFrame([{"data": m["data"], "valor": m["valor"],
@@ -224,12 +225,16 @@ def _grafico_diario(movs: list, tipo_label: str, cor: str) -> go.Figure:
     df["dia"] = pd.to_datetime(df["data"]).dt.normalize()
     serie = df.groupby("dia")["valor"].sum()
     conta = df.groupby("dia")["descricao"].count()
-    if len(serie):
+    # Eixo ancorado no mês selecionado (não na data mais antiga dos dados).
+    try:
+        _ano, _mes = mes_ref.split("-")
+        ini = pd.Timestamp(int(_ano), int(_mes), 1)
+    except Exception:
         ini = serie.index.min().replace(day=1)
-        fim = ini + pd.offsets.MonthEnd(1)
-        todos_dias = pd.date_range(ini, fim, freq="D")
-        serie = serie.reindex(todos_dias, fill_value=0.0)
-        conta = conta.reindex(todos_dias, fill_value=0)
+    fim = ini + pd.offsets.MonthEnd(1)
+    todos_dias = pd.date_range(ini, fim, freq="D")
+    serie = serie.reindex(todos_dias, fill_value=0.0)
+    conta = conta.reindex(todos_dias, fill_value=0)
 
     fig = go.Figure(go.Bar(
         x=serie.index,
@@ -355,7 +360,7 @@ with aba_rec:
     else:
         # Gráfico diário
         st.markdown("**📈 Evolução das entradas ao longo do mês** (por dia)")
-        fig = _grafico_diario(receitas + resgates, "Entradas", "#2ca02c")
+        fig = _grafico_diario(receitas + resgates, "Entradas", "#2ca02c", mes_ref)
         if fig:
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
@@ -395,9 +400,19 @@ with aba_desp:
     else:
         # Gráfico diário (só despesas suas)
         st.markdown("**📈 Evolução dos gastos ao longo do mês** (por dia, excluindo LUMAI)")
-        fig = _grafico_diario(despesas_sem_lumai, "Gastos", "#d62728")
+        fig = _grafico_diario(despesas_sem_lumai, "Gastos", "#d62728", mes_ref)
         if fig:
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        # Aviso se há despesas com data fora do mês selecionado.
+        _fora = [d for d in despesas_sem_lumai if d["data"].strftime("%Y-%m") != mes_ref]
+        if _fora:
+            _soma_fora = sum(d["valor"] for d in _fora)
+            st.caption(
+                f"⚠️ {len(_fora)} despesa(s) deste mês têm **data fora de {_rotulo(mes_ref)}** "
+                f"(somam R\\$ {_soma_fora:,.2f}) — por isso não aparecem no gráfico por dia. "
+                f"Isso costuma ser data errada de cartão/importação. Dá para corrigir na "
+                f"auditoria do Painel ou aqui na aba 'Todas'."
+            )
 
         # Pizza por categoria
         st.markdown("**🥧 Gasto por categoria**")
