@@ -5,6 +5,7 @@ import io
 from typing import Optional
 
 from parsers.extrato.base import ExtratoLido
+from parsers.extrato import c6 as parser_c6
 from parsers.extrato import itau as parser_itau
 from parsers.extrato import ofx as parser_ofx
 
@@ -58,6 +59,8 @@ def extrair(dados: bytes, nome_arquivo: str, senha: str = "") -> Optional[Extrat
     # PDF
     if nome.endswith(".pdf"):
         texto = _ler_texto_pdf(dados, senha=senha)
+        if parser_c6.detectar(texto):
+            return parser_c6.extrair(dados, senha=senha)
         if parser_itau.detectar(texto):
             return parser_itau.extrair(dados, senha=senha)
         if parser_ofx.detectar(texto):
