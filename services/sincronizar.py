@@ -162,10 +162,28 @@ def _sincronizar_despesas_antigas() -> int:
 # ---------------------------------------------------------------------------
 # Sincronização completa
 # ---------------------------------------------------------------------------
+def reclassificar_pagamentos_fatura() -> int:
+    """Corrige retroativamente: movimentações rotuladas como 'despesa' cuja
+    descrição é claramente pagamento de fatura viram 'transferencia', pois
+    o gasto real está nas transações do cartão (evita contar duas vezes)."""
+    from services.movimentacoes import _PAGAMENTO_FATURA
+    n = 0
+    with get_session() as s:
+        rs = s.scalars(
+            select(Movimentacao).where(Movimentacao.tipo == "despesa")
+        ).all()
+        for m in rs:
+            if m.descricao and _PAGAMENTO_FATURA.search(m.descricao):
+                m.tipo = "transferencia"
+                n += 1
+    return n
+
+
 def sincronizar_tudo() -> Dict[str, int]:
-    """Roda todas as sincronizações. Retorna quantas linhas criou de cada."""
+    """Roda todas as sincronizações. Retorna quantas linhas criou/ajustou."""
     return {
         "cartão": sincronizar_cartao(),
         "receitas antigas": _sincronizar_receitas_antigas(),
         "despesas antigas": _sincronizar_despesas_antigas(),
+        "pgto fatura reclassificados": reclassificar_pagamentos_fatura(),
     }

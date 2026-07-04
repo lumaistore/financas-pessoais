@@ -35,31 +35,51 @@ st.caption(
 )
 
 # ---------------------------------------------------------------------------
-# Sincronização (uma vez): puxa faturas de cartão + tabelas antigas
+# Auto-sincronização silenciosa (uma vez por sessão)
 # ---------------------------------------------------------------------------
-with st.expander("🔄 Sincronizar dados existentes (cartão + dados antigos)"):
-    st.write(
-        "Cria movimentações a partir do que já está no banco: "
-        "**transações de cartão** (das faturas importadas), **receitas** e "
-        "**despesas manuais** de antes da reforma. É seguro clicar mais de "
-        "uma vez — o sistema detecta duplicatas por (data + valor + descrição) "
-        "e não recria."
-    )
-    st.warning(
-        "⚠️ Depois de sincronizar, você pode ter **conflito** entre "
-        "'Fatura Paga do Cartão' no extrato e as transações do cartão em si — "
-        "escolha **um** dos dois na hora de manter (senão duplica o gasto)."
-    )
-    if st.button("🔄 Sincronizar agora"):
+if not st.session_state.get("mov_autosync"):
+    from services.sincronizar import sincronizar_tudo
+    resultado_auto = sincronizar_tudo()
+    total_auto = sum(resultado_auto.values())
+    st.session_state["mov_autosync"] = True
+    if total_auto > 0:
+        partes = [f"**{v}** de {k}" for k, v in resultado_auto.items() if v > 0]
+        st.info(f"🔗 Sincronização automática: {total_auto} movimentação(ões) trazidas ({', '.join(partes)}).")
+
+# ---------------------------------------------------------------------------
+# Raio-X: de onde vêm os dados (transparência total)
+# ---------------------------------------------------------------------------
+with st.expander("🔍 Raio-X: onde estão meus dados?"):
+    from services.movimentacoes import listar as _listar_todas
+    todas_movs = _listar_todas()
+    if not todas_movs:
+        st.caption("Ainda não há nenhuma movimentação no banco.")
+    else:
+        by_origem: dict = {}
+        by_mes: dict = {}
+        for m in todas_movs:
+            origem_key = (m.get("origem") or "manual").split(":")[0]
+            by_origem[origem_key] = by_origem.get(origem_key, 0) + 1
+            by_mes[m["mes_referencia"]] = by_mes.get(m["mes_referencia"], 0) + 1
+        cols = st.columns(2)
+        with cols[0]:
+            st.markdown("**Por origem:**")
+            for k, v in sorted(by_origem.items(), key=lambda x: -x[1]):
+                st.write(f"- `{k}`: {v} movimentação(ões)")
+        with cols[1]:
+            st.markdown("**Por mês:**")
+            for k, v in sorted(by_mes.items(), reverse=True)[:6]:
+                st.write(f"- **{k}**: {v} movimentação(ões)")
+    if st.button("🔄 Forçar re-sincronização agora"):
         from services.sincronizar import sincronizar_tudo
         with st.spinner("Sincronizando..."):
-            resultado = sincronizar_tudo()
-        total = sum(resultado.values())
+            r = sincronizar_tudo()
+        total = sum(r.values())
         if total == 0:
-            st.info("Nada novo para sincronizar (tudo já está migrado).")
+            st.info("Tudo já está sincronizado.")
         else:
-            partes = [f"**{v}** de {k}" for k, v in resultado.items() if v > 0]
-            st.success("✅ " + str(total) + " movimentação(ões) criadas: " + ", ".join(partes) + ".")
+            partes = [f"**{v}** de {k}" for k, v in r.items() if v > 0]
+            st.success(f"✅ +{total}: {', '.join(partes)}")
         st.rerun()
 
 

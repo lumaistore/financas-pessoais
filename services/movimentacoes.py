@@ -43,13 +43,27 @@ def _mes_ref(d: date) -> str:
     return d.strftime("%Y-%m")
 
 
+import re as _re
+
+# Padrão pra reconhecer pagamento de fatura de cartão no extrato bancário.
+# Ex.: "FATURA PAGA AZUL ITAU IN", "PAG FATURA CARTAO", "PGTO FATURA".
+_PAGAMENTO_FATURA = _re.compile(
+    r"\b(fatura\s+paga|pag(amento)?\s+fatura|pgto\s+fatura|pagto\s+cartao)\b",
+    _re.I,
+)
+
+
 def classificar(descricao: str, valor: float, conta_origem_id: Optional[int] = None) -> tuple:
     """A partir do texto do lançamento + valor, sugere (tipo, conta_destino_id).
     Regras:
-    - Se descrição bate com uma conta de aplicação cadastrada → aplicacao
-    - Se bate com outra conta corrente/poupança sua → transferencia
-    - Se valor > 0 → receita; se < 0 → despesa
+    - "Fatura paga X" → transferencia (pagamento de cartão; o gasto está nas
+      transações do cartão, não conta duas vezes)
+    - Descrição bate com uma conta de aplicação cadastrada → aplicacao
+    - Bate com outra conta corrente/poupança sua → transferencia
+    - Valor > 0 → receita; < 0 → despesa
     """
+    if descricao and _PAGAMENTO_FATURA.search(descricao):
+        return "transferencia", None
     tipo_detectado, cid = detectar_conta(descricao, conta_origem_id)
     if tipo_detectado in ("transferencia", "aplicacao"):
         return tipo_detectado, cid

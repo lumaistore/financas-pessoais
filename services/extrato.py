@@ -72,19 +72,14 @@ def marcar_duplicatas(lancamentos: List[LancamentoExtrato], mes_ref: str,
     - classificação automática (receita/despesa/transferência/aplicação)
       baseada nas contas cadastradas do usuário.
     """
-    from services.contas import detectar_conta
-    from services.movimentacoes import existe as existe_mov
+    from services.movimentacoes import classificar, existe as existe_mov
 
     ja_tem = existentes(mes_ref)
     saida = []
     for l in lancamentos:
         chave = _chave(l.data, l.valor, l.descricao)
-        # Classificação automática pela descrição
-        tipo_detectado, destino_id = detectar_conta(l.descricao, conta_origem_id)
-        if tipo_detectado in ("transferencia", "aplicacao"):
-            tipo = tipo_detectado
-        else:
-            tipo = "receita" if l.valor > 0 else "despesa"
+        # Classificação inteligente unificada (inclui "FATURA PAGA")
+        tipo, destino_id = classificar(l.descricao, l.valor, conta_origem_id)
         # Checa duplicata também na nova tabela Movimentacao
         dup_nova = existe_mov(l.data, abs(l.valor), l.descricao)
         saida.append({
