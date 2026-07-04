@@ -155,6 +155,15 @@ def listar(mes_referencia: Optional[str] = None,
 # ---------------------------------------------------------------------------
 # Agregações
 # ---------------------------------------------------------------------------
+def meses_disponiveis() -> List[str]:
+    """Meses (AAAA-MM) que têm ao menos uma movimentação, do mais recente ao
+    mais antigo."""
+    with get_session() as s:
+        stmt = select(Movimentacao.mes_referencia).distinct()
+        ms = [m for m in s.scalars(stmt).all() if m]
+    return sorted(ms, reverse=True)
+
+
 def total_por_tipo(mes_referencia: str, tipo: str, excluir_lumai: bool = True) -> float:
     """Total de um tipo no mês. Se `excluir_lumai=True` e for despesa,
     ignora as marcadas como LUMAI (não são gasto seu)."""
@@ -203,6 +212,35 @@ def por_categoria(mes_referencia: str, tipo: str = "despesa",
             {"categoria": nome or "Outros", "total": float(tot or 0.0)}
             for nome, tot in s.execute(stmt)
         ]
+
+
+def por_dia(mes_referencia: str, tipo: str = "despesa",
+            excluir_lumai: bool = True) -> List[dict]:
+    """Soma diária de um tipo no mês, para gráfico de evolução."""
+    with get_session() as s:
+        stmt = (
+            select(Movimentacao.data, func.sum(Movimentacao.valor))
+            .where(Movimentacao.mes_referencia == mes_referencia)
+            .where(Movimentacao.tipo == tipo)
+            .group_by(Movimentacao.data)
+            .order_by(Movimentacao.data)
+        )
+        if tipo == "despesa" and excluir_lumai:
+            stmt = stmt.where(Movimentacao.lumai.is_(False))
+        return [{"data": d, "total": float(t or 0.0)} for d, t in s.execute(stmt)]
+
+
+def por_fonte(mes_referencia: str, tipo: str = "receita") -> List[dict]:
+    """Top fontes/descrições de um tipo — para gráfico de origem das
+    receitas ou destinos das despesas."""
+    linhas = listar(mes_referencia=mes_referencia, tipos=[tipo])
+    acc: dict = {}
+    for m in linhas:
+        chave = m["descricao"][:40] or "(sem descrição)"
+        acc[chave] = acc.get(chave, 0.0) + m["valor"]
+    itens = [{"fonte": k, "total": v} for k, v in acc.items()]
+    itens.sort(key=lambda x: x["total"], reverse=True)
+    return itens
 
 
 def total_lumai_a_reembolsar(mes_referencia: Optional[str] = None) -> float:
