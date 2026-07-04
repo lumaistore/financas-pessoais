@@ -404,3 +404,25 @@ class CompraInvestimento(Base):
     observacao: Mapped[Optional[str]] = mapped_column(String)
     movimentacao_id: Mapped[Optional[int]] = mapped_column(Integer)
     criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class AlertaDispensado(Base):
+    """Alertas padrão que o usuário dispensou (por chave estável)."""
+
+    __tablename__ = "alertas_dispensados"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chave: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class AlertaInteligente(Base):
+    """Alerta/insight gerado por IA a partir dos dados da conta."""
+
+    __tablename__ = "alertas_inteligentes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    titulo: Mapped[str] = mapped_column(String, nullable=False)
+    descricao: Mapped[Optional[str]] = mapped_column(String)
+    prioridade: Mapped[int] = mapped_column(Integer, default=2)
+    criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

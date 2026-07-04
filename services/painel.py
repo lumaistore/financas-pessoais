@@ -311,6 +311,7 @@ def alertas(mes_ref: str) -> List[Dict]:
             "descricao": (f"R$ {lumai_cart:,.2f} em faturas de cartão + "
                           f"R$ {lumai_movs:,.2f} em despesas."),
             "pagina_alvo": "Faturas_Cartao",
+            "chave": "lumai_reembolso",
             "prioridade": 2,
         })
 
@@ -324,6 +325,7 @@ def alertas(mes_ref: str) -> List[Dict]:
             "titulo": f"📋 {total_pendentes} transação(ões) de cartão sem revisar",
             "descricao": f"Em {len(pendentes)} fatura(s). Revise categorias e marque LUMAI se for.",
             "pagina_alvo": "Faturas_Cartao",
+            "chave": "faturas_revisao",
             "prioridade": 1,
         })
 
@@ -335,6 +337,7 @@ def alertas(mes_ref: str) -> List[Dict]:
             "titulo": f"🧾 {len(em_aberto)} fatura(s) em aberto",
             "descricao": "Anexe o comprovante do pagamento e o sistema confirma o fechamento.",
             "pagina_alvo": "Faturas_Cartao",
+            "chave": "faturas_aberto",
             "prioridade": 3,
         })
 
@@ -346,6 +349,7 @@ def alertas(mes_ref: str) -> List[Dict]:
             "titulo": "💾 Nenhum backup ainda",
             "descricao": "Faça o primeiro backup pra proteger seus dados.",
             "pagina_alvo": None,
+            "chave": "backup",
             "prioridade": 2,
         })
     else:
@@ -356,6 +360,7 @@ def alertas(mes_ref: str) -> List[Dict]:
                 "titulo": f"💾 Último backup há {dias} dias",
                 "descricao": "Faça um novo para não perder alterações recentes.",
                 "pagina_alvo": None,
+                "chave": "backup",
                 "prioridade": 2,
             })
 
@@ -370,6 +375,7 @@ def alertas(mes_ref: str) -> List[Dict]:
             "titulo": f"✍️ {len(retiradas_sem_assin)} recibo(s) de retirada sem assinatura",
             "descricao": "Baixe o PDF, assine e devolva na aba de retirada.",
             "pagina_alvo": "Retirada_de_Lucros",
+            "chave": "retiradas_assinatura",
             "prioridade": 2,
         })
 
@@ -384,8 +390,14 @@ def alertas(mes_ref: str) -> List[Dict]:
             "titulo": f"🧪 {len(exames_sem)} exame(s) sem análise por IA",
             "descricao": "Peça a análise educativa para levar dúvidas ao médico.",
             "pagina_alvo": "Exames",
+            "chave": "exames_analise",
             "prioridade": 3,
         })
+
+    # Remove os que o usuário dispensou.
+    from services.alertas import dispensados
+    dispensadas = set(dispensados())
+    a = [x for x in a if x.get("chave") not in dispensadas]
 
     a.sort(key=lambda x: x["prioridade"])
     return a

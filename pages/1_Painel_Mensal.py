@@ -651,24 +651,79 @@ with st.container(border=True):
 # ═══════════════════════════════════════════════════════════════════════
 # SEÇÃO 7 — ⚠️ Alertas e Pendências
 # ═══════════════════════════════════════════════════════════════════════
+from services.alertas import (
+    dispensar as _dispensar_alerta,
+    dispensar_ia as _dispensar_ia,
+    gerar_ia as _gerar_alertas_ia,
+    listar_ia as _listar_alertas_ia,
+    restaurar_todos as _restaurar_alertas,
+)
+
 lista_alertas = alertas(mes_ref)
-if lista_alertas:
+alertas_ia = _listar_alertas_ia()
+
+hcol1, hcol2 = st.columns([3, 2])
+with hcol1:
     st.markdown("### ⚠️ Alertas e pendências")
-    for a in lista_alertas:
-        with st.container(border=True):
-            ac1, ac2 = st.columns([4, 1])
-            with ac1:
-                # Escapa "$" para o Streamlit não interpretar "R$ ... $" como LaTeX.
-                titulo = a["titulo"].replace("$", "\\$")
-                descricao = a["descricao"].replace("$", "\\$")
-                if a["tipo"] == "warning":
-                    st.warning(f"**{titulo}** — {descricao}")
-                else:
-                    st.info(f"**{titulo}** — {descricao}")
-            with ac2:
-                if a.get("pagina_alvo"):
-                    st.page_link(f"pages/{_localizar_pagina(a['pagina_alvo'])}",
-                                  label="Abrir →", icon="🔗")
+with hcol2:
+    st.write("")
+    if st.button("🤖 Sugerir alertas com IA", use_container_width=True):
+        with st.spinner("Analisando sua conta..."):
+            n = _gerar_alertas_ia(mes_ref)
+        if n == -1:
+            st.warning("Configure a chave da API (Anthropic) para usar a IA.")
+        elif n == -2:
+            st.error("Não consegui gerar agora. Tente de novo em instantes.")
+        elif n == 0:
+            st.info("A IA não encontrou nada relevante para alertar agora.")
+        else:
+            st.success(f"{n} alerta(s) inteligente(s) gerado(s).")
+            st.rerun()
+
+# Alertas inteligentes (IA) — dispensáveis um a um
+for a in alertas_ia:
+    with st.container(border=True):
+        ac1, ac2 = st.columns([6, 1])
+        with ac1:
+            titulo = ("🤖 " + a["titulo"]).replace("$", "\\$")
+            descricao = (a["descricao"] or "").replace("$", "\\$")
+            st.info(f"**{titulo}** — {descricao}")
+        with ac2:
+            if st.button("✕", key=f"x_ia_{a['id']}", help="Dispensar este alerta"):
+                _dispensar_ia(a["id"])
+                st.rerun()
+
+# Alertas padrão — dispensáveis por chave
+for a in lista_alertas:
+    with st.container(border=True):
+        ac1, ac2, ac3 = st.columns([6, 1, 1])
+        with ac1:
+            titulo = a["titulo"].replace("$", "\\$")
+            descricao = a["descricao"].replace("$", "\\$")
+            if a["tipo"] == "warning":
+                st.warning(f"**{titulo}** — {descricao}")
+            else:
+                st.info(f"**{titulo}** — {descricao}")
+        with ac2:
+            if a.get("pagina_alvo"):
+                st.page_link(f"pages/{_localizar_pagina(a['pagina_alvo'])}",
+                              label="Abrir", icon="🔗")
+        with ac3:
+            if a.get("chave") and st.button("✕", key=f"x_{a['chave']}",
+                                             help="Dispensar este alerta"):
+                _dispensar_alerta(a["chave"])
+                st.rerun()
+
+if not lista_alertas and not alertas_ia:
+    st.success("✅ Nenhuma pendência no momento. Use o botão acima para pedir sugestões da IA.")
+
+# Restaurar alertas dispensados
+from services.alertas import dispensados as _dispensados_lista
+_disp = _dispensados_lista()
+if _disp:
+    if st.button(f"↩️ Restaurar {len(_disp)} alerta(s) dispensado(s)"):
+        _restaurar_alertas()
+        st.rerun()
 
 # ═══════════════════════════════════════════════════════════════════════
 # SEÇÃO 8 — 🎯 Compromissos ativos (compacto)
