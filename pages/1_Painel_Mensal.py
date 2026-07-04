@@ -20,6 +20,7 @@ from services.compromissos import (
 )
 from services.cotacoes import buscar_cdi_anual, buscar_dolar
 from services.investimentos import (
+    composicao_por_classe,
     cotacao_usd_do_snapshot,
     listar_datas,
     por_classe,
@@ -324,15 +325,42 @@ with st.container(border=True):
                     st.session_state["dolar_agora"] = v
                 st.rerun()
 
-        # Distribuição por classe (donut)
-        classes = por_classe(datas_inv[0])
-        if classes:
-            import plotly.express as px
-            df_cls = pd.DataFrame(classes)
-            fig = px.pie(df_cls, values="total", names="classe", hole=0.5,
-                          title="Distribuição da carteira por classe")
-            fig.update_layout(height=350, margin=dict(l=10, r=10, t=40, b=10),
-                              legend=dict(orientation="h", y=-0.1))
+        # Distribuição por classe (donut) — hover mostra os ativos da classe
+        comp = composicao_por_classe(datas_inv[0])
+        if comp:
+            import plotly.graph_objects as go
+
+            labels = [c["classe"] for c in comp]
+            values = [c["total"] for c in comp]
+            # Monta o detalhamento (ativo: R$ valor) de cada classe para o hover.
+            detalhes = []
+            for c in comp:
+                linhas = "<br>".join(
+                    f"&nbsp;&nbsp;• {ativo}: R$ {v:,.2f}"
+                    for ativo, v in c["itens"][:15]
+                )
+                extra = "" if len(c["itens"]) <= 15 else f"<br>&nbsp;&nbsp;… +{len(c['itens'])-15} ativos"
+                detalhes.append(linhas + extra)
+
+            fig = go.Figure(go.Pie(
+                labels=labels,
+                values=values,
+                hole=0.5,
+                customdata=detalhes,
+                sort=False,
+                hovertemplate=(
+                    "<b>%{label}</b> — %{percent}<br>"
+                    "Total: R$ %{value:,.2f}<br>"
+                    "<br>%{customdata}<extra></extra>"
+                ),
+                textinfo="label+percent",
+            ))
+            fig.update_layout(
+                title="Distribuição da carteira por classe",
+                height=380, margin=dict(l=10, r=10, t=40, b=10),
+                legend=dict(orientation="h", y=-0.1),
+                hoverlabel=dict(align="left"),
+            )
             st.plotly_chart(fig, use_container_width=True)
     else:
         st.caption("Sem carteira cadastrada. Cadastre em **Investimentos**.")
@@ -347,10 +375,13 @@ if lista_alertas:
         with st.container(border=True):
             ac1, ac2 = st.columns([4, 1])
             with ac1:
+                # Escapa "$" para o Streamlit não interpretar "R$ ... $" como LaTeX.
+                titulo = a["titulo"].replace("$", "\\$")
+                descricao = a["descricao"].replace("$", "\\$")
                 if a["tipo"] == "warning":
-                    st.warning(f"**{a['titulo']}** — {a['descricao']}")
+                    st.warning(f"**{titulo}** — {descricao}")
                 else:
-                    st.info(f"**{a['titulo']}** — {a['descricao']}")
+                    st.info(f"**{titulo}** — {descricao}")
             with ac2:
                 if a.get("pagina_alvo"):
                     st.page_link(f"pages/{_localizar_pagina(a['pagina_alvo'])}",

@@ -288,6 +288,32 @@ def por_classe(data_ref: date) -> List[dict]:
 
 
 @cache_leitura
+def composicao_por_classe(data_ref: date) -> List[dict]:
+    """Por classe: total + lista de ativos (ativo, valor_brl) ordenados do
+    maior ao menor. Usado para o hover detalhado do gráfico de pizza."""
+    with get_session() as s:
+        posicoes = s.scalars(
+            select(InvestimentoSnapshot).where(InvestimentoSnapshot.data == data_ref)
+        ).all()
+        acc: dict = {}
+        for p in posicoes:
+            classe = p.classe_ativo or "Outros"
+            acc.setdefault(classe, []).append(
+                (p.ativo, _valor_brl(p.valor_mercado, p.cotacao))
+            )
+    resultado = []
+    for classe, itens in acc.items():
+        itens.sort(key=lambda x: x[1], reverse=True)
+        resultado.append({
+            "classe": classe,
+            "total": sum(v for _, v in itens),
+            "itens": itens,
+        })
+    resultado.sort(key=lambda x: x["total"], reverse=True)
+    return resultado
+
+
+@cache_leitura
 def rendimento(data_ref: date) -> dict:
     """Rendimento em BRL (valor_mercado - valor_investido) das posições que
     têm custo conhecido. Retorna {investido, mercado, lucro, percentual}."""
