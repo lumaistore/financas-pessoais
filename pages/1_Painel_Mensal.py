@@ -185,6 +185,30 @@ with c5:
     tom_meta = "sucesso" if f["taxa_poupanca"] >= 20 else "aviso"
     kpi("Taxa de poupança", f"{f['taxa_poupanca']:.0f}%", meta, tom_meta, icone="📊")
 
+# Detalhamento expansível dos gastos (mês atual + média por categoria)
+with st.expander("🔍 Ver detalhamento dos gastos"):
+    dc1, dc2 = st.columns(2)
+    with dc1:
+        st.markdown(f"**{_rotulo(mes_ref)} — por categoria**")
+        _cats_atual = por_categoria(mes_ref, tipo="despesa", excluir_lumai=True)
+        if _cats_atual:
+            _df = pd.DataFrame(_cats_atual)
+            _df["total"] = _df["total"].apply(_brl)
+            _df.columns = ["Categoria", "Total"]
+            st.dataframe(_df, hide_index=True, use_container_width=True)
+        else:
+            st.caption("Sem gastos registrados neste mês.")
+    with dc2:
+        if mg["por_categoria"]:
+            st.markdown("**Média por categoria (últimos meses)**")
+            _base = ", ".join(_rotulo_curto(m) for m, _ in mg["detalhe_meses"])
+            st.caption(f"Base: {_base}")
+            _dfm = pd.DataFrame(mg["por_categoria"], columns=["Categoria", "Média/mês"])
+            _dfm["Média/mês"] = _dfm["Média/mês"].apply(_brl)
+            st.dataframe(_dfm, hide_index=True, use_container_width=True)
+        else:
+            st.caption("Sem histórico suficiente para a média.")
+
 # ═══════════════════════════════════════════════════════════════════════
 # SEÇÃO 2 — 📊 Waterfall do Fluxo
 # ═══════════════════════════════════════════════════════════════════════
