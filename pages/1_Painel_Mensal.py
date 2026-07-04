@@ -467,19 +467,29 @@ with st.container(border=True):
 st.markdown("### 🏦 Movimentação por conta bancária")
 contas_fluxo = fluxo_por_conta(mes_ref)
 with st.container(border=True):
-    if contas_fluxo and any(c["entradas"] or c["saidas"] for c in contas_fluxo):
+    _tem_dados = contas_fluxo and any(c["entradas"] or c["saidas"] for c in contas_fluxo)
+    if _tem_dados:
         df_c = pd.DataFrame(contas_fluxo)
         df_c = df_c[df_c["entradas"] + df_c["saidas"] > 0]  # esconde contas sem movimento
-        if not df_c.empty:
-            df_show = df_c[["apelido", "banco", "entradas", "saidas", "saldo_mes"]].copy()
-            for col in ("entradas", "saidas", "saldo_mes"):
-                df_show[col] = df_show[col].apply(_brl)
-            df_show.columns = ["Conta", "Banco", "Entradas", "Saídas", "Saldo do mês"]
-            st.dataframe(df_show, use_container_width=True, hide_index=True)
-        else:
-            st.caption("Sem movimentações classificadas por conta neste mês.")
+        df_show = df_c[["apelido", "banco", "entradas", "saidas", "saldo_mes"]].copy()
+        for col in ("entradas", "saidas", "saldo_mes"):
+            df_show[col] = df_show[col].apply(_brl)
+        df_show.columns = ["Conta", "Banco", "Entradas", "Saídas", "Saldo do mês"]
+        st.dataframe(df_show, use_container_width=True, hide_index=True)
     else:
-        st.caption("Nenhuma conta cadastrada ou sem movimentações. Cadastre em **🏦 Contas**.")
+        from services.contas import listar_contas as _lc
+        _n_contas = len(_lc())
+        if _n_contas == 0:
+            st.caption("Cadastre suas contas (Itaú, C6, BTG) em **🏦 Contas** para ver o fluxo de cada uma.")
+        else:
+            st.info(
+                f"Você tem **{_n_contas} conta(s)** cadastrada(s), mas as movimentações "
+                f"deste mês ainda **não estão vinculadas** a elas.\n\n"
+                f"Esta tabela é preenchida quando você **importa um extrato** em "
+                f"**Extrato Bancario** e escolhe a **conta de origem** (Itaú/C6/BTG). "
+                f"Gastos de cartão e receitas não pertencem a uma conta específica, "
+                f"então não entram aqui."
+            )
 
 # ═══════════════════════════════════════════════════════════════════════
 # SEÇÃO 5 — 📉 Gastos (gráfico + variação + top)
