@@ -11,11 +11,26 @@ from typing import List
 
 from sqlalchemy import select
 
-from core.cache import cache_leitura, invalida_cache
+from core.cache import cache_leitura
 from core.db import get_session
 from core.models import AlertaDispensado, AlertaInteligente
 
 MODELO_IA = "claude-sonnet-4-5-20250929"
+
+
+def _limpar_cache_alertas() -> None:
+    """Limpa APENAS os caches ligados a alertas (não o painel inteiro).
+    Dispensar/restaurar alerta é leve; não deve recalcular fluxo/patrimônio."""
+    for f in (dispensados, listar_ia):
+        try:
+            f.clear()
+        except Exception:
+            pass
+    try:
+        from services.painel import alertas
+        alertas.clear()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -27,21 +42,21 @@ def dispensados() -> List[str]:
         return [d.chave for d in s.scalars(select(AlertaDispensado)).all()]
 
 
-@invalida_cache
 def dispensar(chave: str) -> None:
     with get_session() as s:
         existe = s.scalar(select(AlertaDispensado).where(AlertaDispensado.chave == chave))
         if not existe:
             s.add(AlertaDispensado(chave=chave))
+    _limpar_cache_alertas()
 
 
-@invalida_cache
 def restaurar_todos() -> int:
     n = 0
     with get_session() as s:
         for d in s.scalars(select(AlertaDispensado)).all():
             s.delete(d)
             n += 1
+    _limpar_cache_alertas()
     return n
 
 
@@ -61,12 +76,15 @@ def listar_ia() -> List[dict]:
         ]
 
 
-@invalida_cache
 def dispensar_ia(alerta_id: int) -> None:
     with get_session() as s:
         a = s.get(AlertaInteligente, alerta_id)
         if a:
             s.delete(a)
+    try:
+        listar_ia.clear()
+    except Exception:
+        pass
 
 
 def _contexto_conta(mes_ref: str) -> str:
@@ -117,7 +135,6 @@ DADOS DA CONTA:
 """.strip()
 
 
-@invalida_cache
 def gerar_ia(mes_ref: str) -> int:
     """Gera novos alertas inteligentes (substitui os anteriores). Retorna
     quantos criou. 0 se não houver chave de API."""
@@ -157,4 +174,8 @@ def gerar_ia(mes_ref: str) -> int:
             s.delete(a)
         for i, (titulo, desc) in enumerate(novos[:4]):
             s.add(AlertaInteligente(titulo=titulo, descricao=desc, prioridade=i))
+    try:
+        listar_ia.clear()
+    except Exception:
+        pass
     return len(novos[:4])
