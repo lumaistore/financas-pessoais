@@ -16,7 +16,6 @@ from services.compromissos import (
     contar_ativos,
     listar_compromissos,
     resumo_imoveis,
-    total_saldo_devedor,
 )
 from services.cotacoes import buscar_cdi_anual, buscar_dolar
 from services.investimentos import (
@@ -676,23 +675,49 @@ if lista_alertas:
 # ═══════════════════════════════════════════════════════════════════════
 ativos = listar_compromissos(apenas_ativos=True)
 if ativos:
+    imoveis_c = resumo_imoveis()
+    prox_por_nome = {c["nome"]: c.get("proxima_data") for c in ativos}
+    nomes_imovel = {d["nome"] for d in imoveis_c["detalhe"]}
+
     st.markdown("### 🎯 Compromissos em andamento")
     with st.container(border=True):
-        cc1, cc2 = st.columns(2)
+        cc1, cc2, cc3 = st.columns(3)
         cc1.metric("Compromissos ativos", contar_ativos())
-        cc2.metric("Saldo devedor total", _brl(total_saldo_devedor()))
+        cc2.metric("💰 Já pago (imóveis)", _brl(imoveis_c["total_pago"]))
+        cc3.metric("🧮 Falta pagar (sem juros)", _brl(imoveis_c["saldo_a_pagar"]),
+                    help="Só o principal dos imóveis. Não inclui os juros do "
+                         "financiamento de longo prazo.")
 
+        def _txt(s: str) -> str:
+            return s.replace("$", "\\$")  # evita R$ virar LaTeX no texto da barra
+
+        # Imóveis (valores sem juros)
+        for d in imoveis_c["detalhe"]:
+            prox = prox_por_nome.get(d["nome"])
+            prox_txt = prox.strftime("%d/%m/%Y") if prox else "—"
+            st.progress(
+                min(d["progresso"], 1.0),
+                text=_txt(f"🏠 {d['nome']} — {d['progresso']*100:.0f}% pago · "
+                          f"já pago {_brl(d['pago'])} · falta {_brl(d['total'])} · "
+                          f"próx {prox_txt}"),
+            )
+
+        # Outros compromissos (parcelamentos que não são imóveis)
         for c in ativos:
+            if c["nome"] in nomes_imovel or c.get("eh_imovel"):
+                continue
             prox = c["proxima_data"].strftime("%d/%m/%Y") if c["proxima_data"] else "—"
-            if c.get("eh_imovel"):
-                st.progress(min(c["progresso"], 1.0),
-                             text=(f"🏢 {c['nome']} — {c['progresso']*100:.0f}% pago · "
-                                   f"saldo à vista {_brl(c['saldo_devedor'])} · próx {prox}"))
-            else:
-                pct = c["parcelas_pagas"] / max(c["total_parcelas"], 1)
-                st.progress(pct,
-                             text=(f"{c['nome']} — {c['parcelas_pagas']}/{c['total_parcelas']} pagas · "
-                                   f"saldo {_brl(c['saldo_devedor'])} · próx {prox}"))
+            pct = c["parcelas_pagas"] / max(c["total_parcelas"], 1)
+            st.progress(
+                pct,
+                text=_txt(f"{c['nome']} — {c['parcelas_pagas']}/{c['total_parcelas']} "
+                          f"pagas · saldo {_brl(c['saldo_devedor'])} · próx {prox}"),
+            )
+
+        st.caption(
+            "Valores dos imóveis são **sem juros** (só o principal). O "
+            "financiamento de longo prazo com juros aparece na aba Financiamentos."
+        )
 
 # ═══════════════════════════════════════════════════════════════════════
 # BACKUP (compacto no fim)

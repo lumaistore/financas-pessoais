@@ -308,9 +308,12 @@ def resumo_imoveis() -> dict:
         if tipo == "imovel":
             parcelas = max(0.0, (total_plano or 0.0) - (financ or 0.0) - pago)
             balao = financ or 0.0
+            valor_imovel = total_plano or (pago + parcelas + balao)
             detalhe.append({
                 "nome": nome, "parcelas": parcelas, "financiamento": balao,
                 "carneiros": False, "total": parcelas + balao,
+                "pago": pago, "valor_imovel": valor_imovel,
+                "progresso": (pago / valor_imovel) if valor_imovel else 0.0,
             })
         else:
             valor_imovel = total_plano or (
@@ -320,6 +323,8 @@ def resumo_imoveis() -> dict:
             detalhe.append({
                 "nome": nome, "parcelas": falta, "financiamento": 0.0,
                 "carneiros": True, "total": falta,
+                "pago": pago, "valor_imovel": valor_imovel,
+                "progresso": (pago / valor_imovel) if valor_imovel else 0.0,
             })
 
     detalhe.sort(key=lambda d: d["total"], reverse=True)
