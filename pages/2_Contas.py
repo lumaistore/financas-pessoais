@@ -5,6 +5,7 @@ import streamlit as st
 
 from core.db import init_db
 from core.ui import aplicar_estilo, cabecalho_pagina
+from core.auth import exigir_senha
 from services.contas import (
     TIPOS_CONTA,
     adicionar_conta,
@@ -17,6 +18,7 @@ from services.contas import (
 
 init_db()
 aplicar_estilo()
+exigir_senha()
 
 cabecalho_pagina("Contas financeiras", icone="🏦")
 st.caption(

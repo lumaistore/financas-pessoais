@@ -10,6 +10,7 @@ import streamlit as st
 
 from core.db import init_db
 from core.ui import aplicar_estilo, cabecalho_pagina
+from core.auth import exigir_senha
 from services.analise_ia import (
     DISCLAIMER,
     NOME_VARIAVEL,
@@ -22,6 +23,7 @@ from services.analise_ia import (
 
 init_db()
 aplicar_estilo()
+exigir_senha()
 
 cabecalho_pagina("Analisar minha carteira", icone="🔍")
 st.caption(

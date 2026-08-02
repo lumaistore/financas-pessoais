@@ -12,6 +12,7 @@ import streamlit as st
 
 from core.db import init_db
 from core.ui import COR, aplicar_estilo, cabecalho_pagina, kpi
+from core.auth import exigir_senha
 from services.cartao import listar_categorias
 from services.contas import listar_contas
 from services.movimentacoes import (
@@ -31,6 +32,7 @@ from services.movimentacoes import (
 
 init_db()
 aplicar_estilo()
+exigir_senha()
 
 cabecalho_pagina(
     "Movimentações",

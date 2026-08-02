@@ -5,6 +5,7 @@ import streamlit as st
 
 from core.db import init_db
 from core.ui import aplicar_estilo, cabecalho_pagina
+from core.auth import exigir_senha
 from services.assessor import (
     DISCLAIMER,
     carregar_consulta,
@@ -94,6 +95,7 @@ def renderizar_analise_tickers(tickers_lista: list, titulo: str):
 
 init_db()
 aplicar_estilo()
+exigir_senha()
 
 cabecalho_pagina("Assessor de Investimentos", icone="👔")
 st.caption(

@@ -6,6 +6,7 @@ import streamlit as st
 
 from core.db import init_db
 from core.ui import aplicar_estilo, cabecalho_pagina
+from core.auth import exigir_senha
 from services.compromissos import (
     TIPOS,
     TIPOS_PAGAMENTO,
@@ -28,6 +29,7 @@ from services.compromissos import (
 
 init_db()
 aplicar_estilo()
+exigir_senha()
 
 cabecalho_pagina("Financiamentos e Imóveis", icone="🏠")
 st.caption("Acompanhe saldo devedor, próximas parcelas e datas dos seus compromissos.")

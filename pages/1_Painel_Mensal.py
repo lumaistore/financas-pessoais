@@ -10,6 +10,7 @@ import streamlit as st
 
 from core.db import init_db
 from core.ui import COR, aplicar_estilo, cabecalho_pagina, kpi
+from core.auth import exigir_senha
 from services.backup import criar_backup, listar_backups
 from services.cartao import reembolso_lumai_por_fatura
 from services.compromissos import (
@@ -50,6 +51,7 @@ from services.painel import (
 
 init_db()
 aplicar_estilo()
+exigir_senha()
 
 cabecalho_pagina("Painel Mensal",
                  "Visão consolidada e inteligente das suas finanças.", "📊")

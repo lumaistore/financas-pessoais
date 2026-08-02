@@ -6,6 +6,7 @@ import streamlit as st
 
 from core.db import init_db
 from core.ui import aplicar_estilo, cabecalho_pagina
+from core.auth import exigir_senha
 from services.despesas_medicas import (
     TIPOS,
     adicionar,
@@ -27,6 +28,7 @@ from services.perfil import get_perfil, lista_pacientes, paciente_padrao, salvar
 
 init_db()
 aplicar_estilo()
+exigir_senha()
 
 cabecalho_pagina("Despesas Médicas", icone="🩺")
 st.caption(

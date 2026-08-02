@@ -6,6 +6,7 @@ import streamlit as st
 
 from core.db import init_db
 from core.ui import aplicar_estilo, cabecalho_pagina
+from core.auth import exigir_senha
 from services.lucros import (
     adicionar_retirada,
     arquivo_assinado,
@@ -26,6 +27,7 @@ from services.lucros import (
 
 init_db()
 aplicar_estilo()
+exigir_senha()
 
 cabecalho_pagina("Retirada de Lucros", icone="🧮")
 st.caption(

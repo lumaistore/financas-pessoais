@@ -13,6 +13,7 @@ import streamlit as st
 
 from core.db import init_db
 from core.ui import aplicar_estilo, cabecalho_pagina
+from core.auth import exigir_senha
 from services.investimentos import (
     CLASSES,
     MOEDAS,
@@ -42,6 +43,7 @@ INDEXADORES = ["", "CDI", "PREFIXADO", "IPCA"]
 
 init_db()
 aplicar_estilo()
+exigir_senha()
 
 cabecalho_pagina("Investimentos", icone="📈")
 st.caption(

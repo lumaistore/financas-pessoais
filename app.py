@@ -7,12 +7,14 @@ import streamlit as st
 
 from core.db import init_db
 from core.ui import COR, aplicar_estilo
+from core.auth import exigir_senha
 
 st.set_page_config(page_title="Finanças Pessoais", page_icon="💰", layout="wide")
 
 # Garante o banco e as tabelas na primeira execução.
 init_db()
 aplicar_estilo()
+exigir_senha()
 
 st.markdown(
     f"""
