@@ -17,18 +17,13 @@ from core.models import Fatura
 from services.movimentacoes import listar as _listar_movs
 
 
-def listar_despesas():
-    """Wrapper compat: retorna despesas LUMAI para o relatório."""
-    return [
-        {**m, "reembolsado": m["reembolsado"]}
-        for m in _listar_movs()
-        if m["tipo"] == "despesa" and m["lumai"]
-    ]
-
-
 def itens_lumai(incluir_pagos: bool = False) -> List[dict]:
     """Despesas LUMAI ainda a reembolsar (não pagas por padrão), com detalhe.
-    Passe `incluir_pagos=True` para relatório histórico completo."""
+
+    FONTE ÚNICA para cartão = as faturas. As movimentações que vieram do cartão
+    (origem 'cartao:...') NÃO são incluídas de novo — senão o mesmo gasto conta
+    duas vezes (bug antigo que inflava o total). Só entram como 'avulsa' as
+    despesas LUMAI que NÃO são de cartão (manual/extrato)."""
     itens: List[dict] = []
     with get_session() as s:
         for f in s.scalars(select(Fatura)).all():
@@ -47,18 +42,22 @@ def itens_lumai(incluir_pagos: bool = False) -> List[dict]:
                         "valor": float(t.valor),
                     }
                 )
-    for d in listar_despesas():
-        if not d.get("lumai"):
+
+    for m in _listar_movs():
+        if m["tipo"] != "despesa" or not m.get("lumai"):
             continue
-        if not incluir_pagos and d.get("reembolsado"):
+        # Movimentações de cartão já foram contadas via fatura → não duplicar.
+        if (m.get("origem") or "").startswith("cartao"):
+            continue
+        if not incluir_pagos and m.get("reembolsado"):
             continue
         itens.append(
             {
-                "origem": f"Despesa avulsa ({d['forma']})",
-                "data": d["data"],
-                "descricao": d["descricao"],
-                "categoria": d["categoria"],
-                "valor": float(d["valor"]),
+                "origem": f"Despesa avulsa ({m.get('forma') or 'outros'})",
+                "data": m["data"],
+                "descricao": m["descricao"],
+                "categoria": m["categoria"],
+                "valor": float(m["valor"]),
             }
         )
     itens.sort(key=lambda x: (x["origem"], x["data"]))
