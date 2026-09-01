@@ -151,6 +151,21 @@ def _pinta(row):
 
 
 st.dataframe(df_show.style.apply(_pinta, axis=1), use_container_width=True, hide_index=True)
+# Alerta de possíveis duplicidades: mesma data e mesmo valor, em qualquer ano.
+_pares = {}
+for _r in listar_retiradas():
+    _pares.setdefault((_r["data"], _r["valor"]), []).append(_r["id"])
+_dups = {k: v for k, v in _pares.items() if len(v) > 1}
+if _dups:
+    _linhas = " · ".join(
+        f"{d.strftime('%d/%m/%Y')} — R$ {v:,.2f} ({len(ids)}x)"
+        for (d, v), ids in sorted(_dups.items())
+    )
+    st.warning(
+        "⚠️ Possíveis duplicidades (mesma data e mesmo valor): " + _linhas
+        + ". Confira na seção 4 — cada registro agora tem um nº (#id) para excluir o repetido."
+    )
+
 faltam = [m["nome_mes"] for m in meses if not m["feito"]]
 if faltam:
     st.caption("🔎 Meses **sem** retirada registrada em " + str(ano_sel) + ": **" + ", ".join(faltam) + "**.")
@@ -182,7 +197,7 @@ if not todos:
 
 opcoes = {
     f"{r['data'].strftime('%d/%m/%Y')} · R$ {r['valor']:,.2f} · "
-    f"{'assinado' if r['assinado'] else 'pendente'}": r["id"]
+    f"{'assinado' if r['assinado'] else 'pendente'} · #{r['id']}": r["id"]
     for r in todos
 }
 sel = st.selectbox("Selecione um registro", list(opcoes.keys()))
